@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>작업 바코드 스캐너</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0D1117;--surface:#161B22;--surface2:#1C2128;--border:#30363D;--border2:#21262D;--text:#E6EDF3;--muted:#8B949E;--dim:#484F58;--accent:#E8973A;--accentDim:rgba(232,151,58,.12);--danger:#F85149;--dangerDim:rgba(248,81,73,.12);--ok:#3FB950;--okDim:rgba(63,185,80,.12);--r:10px;--mono:'JetBrains Mono',monospace;--sans:'Pretendard Variable','Pretendard',system-ui,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100dvh}.app{max-width:480px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:12px;min-height:100dvh}.header{display:flex;justify-content:space-between;align-items:flex-start}.brand-name{font-weight:700;font-size:14px}.brand-sub{font:9px var(--mono);letter-spacing:1.4px;color:var(--dim);margin-top:3px}.status{font:11px var(--mono);color:var(--ok);border:1px solid rgba(63,185,80,.3);background:var(--okDim);padding:5px 9px;border-radius:20px}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px}.stat-label{font:9px var(--mono);letter-spacing:1px;color:var(--dim)}.stat-value{font:700 24px var(--mono);margin-top:5px}.scan-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px}.scan-title{font-size:13px;font-weight:700;margin-bottom:10px}.scan-input{width:100%;padding:15px 16px;border-radius:var(--r);border:1.5px solid var(--border);background:var(--bg);color:var(--text);font:600 16px var(--mono);text-align:center;letter-spacing:1px}.scan-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accentDim)}.hint{font-size:11px;color:var(--muted);margin-top:8px;text-align:center;line-height:1.5}.list{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}.list-head{display:flex;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border2);font-size:11px;color:var(--muted)}.row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border2)}.row:last-child{border-bottom:0}.code{font:600 12px var(--mono)}.time{font:10px var(--mono);color:var(--dim)}.tag{font:700 9px var(--mono);padding:3px 7px;border-radius:4px}.tag.normal{color:var(--muted);border:1px solid var(--border)}.tag.target{color:var(--accent);background:var(--accentDim);border:1px solid rgba(232,151,58,.3)}.tag.done{color:var(--ok);background:var(--okDim);border:1px solid rgba(63,185,80,.3)}.empty{padding:40px 20px;text-align:center;color:var(--dim);font-size:12px}.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:22px;z-index:20}.modal-bg.show{display:flex}.modal{width:min(100%,340px);background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px;text-align:center}.warn{font-size:34px}.modal h2{font-size:18px;margin:10px 0 6px}.modal p{font-size:13px;color:var(--muted);line-height:1.55}.target-code{font:700 15px var(--mono);color:var(--accent);margin:14px 0;padding:10px;background:var(--accentDim);border-radius:8px}.actions{display:flex;flex-direction:column;gap:8px;margin-top:16px}.btn{border:0;border-radius:9px;padding:13px 14px;font:700 14px var(--sans);cursor:pointer}.btn-primary{background:var(--accent);color:#0D1117}.btn-secondary{background:transparent;color:var(--muted);border:1px solid var(--border)}.camera-input{display:none}.preview{display:none;margin-top:14px}.preview.show{display:block}.preview img{width:100%;max-height:280px;object-fit:cover;border-radius:10px;border:1px solid var(--border)}.preview-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.footer-note{font-size:10px;color:var(--dim);text-align:center;padding:4px}
+</style>
+
+<style id="github-light-ui">
+:root{
+  --gh-bg:#ffffff;
+  --gh-subtle:#f6f8fa;
+  --gh-border:#d0d7de;
+  --gh-border-muted:#d8dee4;
+  --gh-text:#1f2328;
+  --gh-muted:#656d76;
+  --gh-accent:#0969da;
+  --gh-accent-hover:#0860ca;
+  --gh-success:#1a7f37;
+  --gh-success-bg:#dafbe1;
+  --gh-danger:#cf222e;
+  --gh-danger-bg:#ffebe9;
+  --gh-warning:#9a6700;
+  --gh-warning-bg:#fff8c5;
+  --gh-shadow:0 1px 0 rgba(31,35,40,.04);
+}
+html,body{
+  background:var(--gh-bg)!important;
+  color:var(--gh-text)!important;
+}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",Helvetica,Arial,sans-serif!important;
+}
+.app,.container,.page,.main{
+  background:var(--gh-bg)!important;
+}
+.header,.topbar,.hub-back{
+  background:var(--gh-subtle)!important;
+  border-color:var(--gh-border)!important;
+  color:var(--gh-text)!important;
+}
+.brand-name,.title,h1,h2,h3,.modal-title{
+  color:var(--gh-text)!important;
+}
+.brand-sub,.subtitle,.counter-label,.total-label,.item-time,.last-code,.muted,.list-empty-text{
+  color:var(--gh-muted)!important;
+}
+.counter-card,.list-card,.card,.panel,.modal-card,.preview-card,.status-card{
+  background:var(--gh-bg)!important;
+  border:1px solid var(--gh-border)!important;
+  box-shadow:var(--gh-shadow)!important;
+}
+.counter-card::before{background:var(--gh-accent)!important;opacity:1!important;}
+.counter-value,.total-value,.item-code,.barcode,.code{
+  color:var(--gh-text)!important;
+}
+.input-field,.setup-input,.setup-select,input[type="text"],input[type="search"]{
+  background:var(--gh-bg)!important;
+  border:1px solid var(--gh-border)!important;
+  color:var(--gh-text)!important;
+  box-shadow:inset 0 1px 0 rgba(208,215,222,.2)!important;
+}
+.input-field:focus,.setup-input:focus,.setup-select:focus,input:focus{
+  border-color:#54aeff!important;
+  box-shadow:0 0 0 3px rgba(9,105,218,.18)!important;
+  outline:none!important;
+}
+.input-field::placeholder,input::placeholder{color:#8c959f!important;}
+.hanger-badge,.badge,.tag{
+  background:var(--gh-subtle)!important;
+  border:1px solid var(--gh-border)!important;
+  color:var(--gh-muted)!important;
+}
+.btn,.btn-sm,.modal-btn,button{
+  border-radius:6px!important;
+  font-weight:600!important;
+}
+.btn-save,.modal-btn-confirm,.modal-btn-ok,.primary,.btn-primary{
+  background:#1f883d!important;
+  border:1px solid rgba(31,35,40,.15)!important;
+  color:#fff!important;
+  box-shadow:0 1px 0 rgba(31,35,40,.1),inset 0 1px 0 rgba(255,255,255,.03)!important;
+}
+.btn-save:hover,.modal-btn-confirm:hover,.modal-btn-ok:hover,.primary:hover,.btn-primary:hover{
+  background:#1a7f37!important;
+}
+.btn-undo,.btn-offline,.btn-sm,.modal-btn-cancel,.secondary,.btn-secondary{
+  background:var(--gh-subtle)!important;
+  border:1px solid var(--gh-border)!important;
+  color:var(--gh-text)!important;
+}
+.btn-undo:hover,.btn-offline:hover,.btn-sm:hover,.modal-btn-cancel:hover,.secondary:hover,.btn-secondary:hover{
+  background:#f3f4f6!important;
+}
+.btn-reset-hanger,.danger,.btn-danger,.modal-btn-danger{
+  background:var(--gh-bg)!important;
+  color:var(--gh-danger)!important;
+  border:1px solid var(--gh-border)!important;
+}
+.btn-reset-hanger:hover,.danger:hover,.btn-danger:hover{
+  background:var(--gh-danger)!important;
+  color:#fff!important;
+  border-color:var(--gh-danger)!important;
+}
+.list-item{
+  background:var(--gh-bg)!important;
+  border-color:#d8dee4!important;
+}
+.list-item:hover{background:var(--gh-subtle)!important;}
+.list-item.is-dup{
+  background:var(--gh-danger-bg)!important;
+}
+.dup-tag{
+  color:var(--gh-danger)!important;
+  background:var(--gh-danger-bg)!important;
+  border-color:#ff8182!important;
+}
+.modal-bg{
+  background:rgba(31,35,40,.4)!important;
+  backdrop-filter:none!important;
+}
+.modal-card{
+  border-radius:12px!important;
+  box-shadow:0 8px 24px rgba(140,149,159,.2)!important;
+}
+.modal-msg{color:var(--gh-text)!important;}
+.toast{
+  background:#24292f!important;
+  color:#fff!important;
+  border-color:#24292f!important;
+}
+.dup-overlay{
+  background:rgba(207,34,46,.08)!important;
+  backdrop-filter:none!important;
+}
+.dup-title{color:var(--gh-danger)!important;}
+.input-indicator{background:var(--gh-success)!important;}
+a{color:var(--gh-accent)!important;}
+.task-modal,.warning-card,.target-modal{
+  border-top:4px solid #bf8700!important;
+}
+.task-status,.warning-badge,.target-badge{
+  display:inline-flex!important;
+  align-items:center!important;
+  gap:6px!important;
+  padding:3px 8px!important;
+  border-radius:999px!important;
+  border:1px solid #d4a72c!important;
+  background:var(--gh-warning-bg)!important;
+  color:var(--gh-warning)!important;
+  font-size:12px!important;
+  font-weight:600!important;
+}
+</style>
+
+</head>
+<body>
+<div class="app">
+  <div class="header"><div><div class="brand-name">작업 바코드 스캔</div><div class="brand-sub">MARKET IN U · MOBILE TOOL</div></div><div class="status">READY</div></div>
+  <div class="stats"><div class="stat"><div class="stat-label">TOTAL</div><div class="stat-value" id="totalCount">0</div></div><div class="stat"><div class="stat-label">TARGET</div><div class="stat-value" id="targetCount">0</div></div><div class="stat"><div class="stat-label">PHOTO</div><div class="stat-value" id="photoCount">0</div></div></div>
+  <div class="scan-card"><div class="scan-title">바코드를 스캔해주세요</div><input id="scanInput" class="scan-input" autocomplete="off" autocapitalize="characters" inputmode="none" placeholder="SCAN BARCODE"><div class="hint">물리 바코드 스캐너 입력 후 Enter 기준으로 판정합니다.<br>현재는 샘플 대상 바코드로 테스트합니다.</div></div>
+  <div class="list"><div class="list-head"><span>최근 스캔</span><span id="lastCode">-</span></div><div id="rows"><div class="empty">아직 스캔 기록이 없습니다.</div></div></div>
+  <div class="footer-note">1차 테스트 버전 · Supabase 저장은 다음 단계에서 연결</div>
+</div>
+
+<div class="modal-bg" id="targetModal">
+  <div class="modal">
+    <div class="warn">⚠️</div>
+    <h2>작업이 필요한 바코드입니다</h2>
+    <p>현재 상품 사진 촬영이 필요한 대상으로 등록되어 있습니다.</p>
+    <div class="target-code" id="modalBarcode">-</div>
+    <div id="beforePhoto" class="actions">
+      <button class="btn btn-primary" id="cameraBtn">📷 사진 촬영</button>
+      <button class="btn btn-secondary" id="laterBtn">나중에 촬영</button>
+    </div>
+    <input id="cameraInput" class="camera-input" type="file" accept="image/*" capture="environment">
+    <div class="preview" id="previewBox"><img id="previewImg" alt="촬영 미리보기"><div class="preview-actions"><button class="btn btn-secondary" id="retakeBtn">다시 촬영</button><button class="btn btn-primary" id="saveBtn">저장</button></div></div>
+  </div>
+</div>
+
+<script>
+const TARGET_BARCODES = new Set([
+  'SB260812345',
+  'CR61234567',
+  'TT21234567'
+]);
+
+const scanInput = document.getElementById('scanInput');
+const targetModal = document.getElementById('targetModal');
+const modalBarcode = document.getElementById('modalBarcode');
+const cameraInput = document.getElementById('cameraInput');
+const cameraBtn = document.getElementById('cameraBtn');
+const laterBtn = document.getElementById('laterBtn');
+const previewBox = document.getElementById('previewBox');
+const previewImg = document.getElementById('previewImg');
+const retakeBtn = document.getElementById('retakeBtn');
+const saveBtn = document.getElementById('saveBtn');
+const beforePhoto = document.getElementById('beforePhoto');
+const rows = document.getElementById('rows');
+
+let logs = [];
+let currentBarcode = null;
+let currentFile = null;
+
+function normalizeBarcode(v){ return v.trim().replace(/\s+/g,'').toUpperCase(); }
+function nowTime(){ return new Intl.DateTimeFormat('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date()); }
+function vibrate(pattern){ if(navigator.vibrate) navigator.vibrate(pattern); }
+function refocus(){ setTimeout(()=>scanInput.focus(),80); }
+
+scanInput.addEventListener('keydown', e=>{
+  if(e.key !== 'Enter') return;
+  e.preventDefault();
+  const barcode = normalizeBarcode(scanInput.value);
+  scanInput.value = '';
+  if(!barcode) return;
+  handleScan(barcode);
+});
+
+function handleScan(barcode){
+  const isTarget = TARGET_BARCODES.has(barcode);
+  const entry = { barcode, isTarget, photo:false, time:nowTime() };
+  logs.unshift(entry);
+  render();
+  if(isTarget){
+    currentBarcode = barcode;
+    modalBarcode.textContent = barcode;
+    vibrate([180,80,180]);
+    targetModal.classList.add('show');
+  } else {
+    vibrate(35);
+    refocus();
+  }
+}
+
+cameraBtn.addEventListener('click', ()=> cameraInput.click());
+laterBtn.addEventListener('click', closeModal);
+retakeBtn.addEventListener('click', ()=> cameraInput.click());
+
+cameraInput.addEventListener('change', e=>{
+  const file = e.target.files?.[0];
+  if(!file) return;
+  currentFile = file;
+  previewImg.src = URL.createObjectURL(file);
+  beforePhoto.style.display = 'none';
+  previewBox.classList.add('show');
+});
+
+saveBtn.addEventListener('click', ()=>{
+  const match = logs.find(x=>x.barcode === currentBarcode && x.isTarget && !x.photo);
+  if(match) match.photo = true;
+  render();
+  vibrate([60,40,60]);
+  closeModal();
+});
+
+function closeModal(){
+  targetModal.classList.remove('show');
+  beforePhoto.style.display = 'flex';
+  previewBox.classList.remove('show');
+  previewImg.src = '';
+  cameraInput.value = '';
+  currentBarcode = null;
+  currentFile = null;
+  refocus();
+}
+
+function render(){
+  document.getElementById('totalCount').textContent = logs.length;
+  document.getElementById('targetCount').textContent = logs.filter(x=>x.isTarget).length;
+  document.getElementById('photoCount').textContent = logs.filter(x=>x.photo).length;
+  document.getElementById('lastCode').textContent = logs[0]?.barcode || '-';
+  if(!logs.length){ rows.innerHTML = '<div class="empty">아직 스캔 기록이 없습니다.</div>'; return; }
+  rows.innerHTML = logs.slice(0,30).map(x=>`<div class="row"><div><div class="code">${escapeHtml(x.barcode)}</div><div class="time">${x.time}</div></div><div class="tag ${x.photo?'done':x.isTarget?'target':'normal'}">${x.photo?'촬영완료':x.isTarget?'작업대상':'정상'}</div></div>`).join('');
+}
+function escapeHtml(s){return s.replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden && !targetModal.classList.contains('show')) refocus(); });
+window.addEventListener('load', refocus);
+</script>
+</body>
+</html>
