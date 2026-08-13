@@ -32,7 +32,7 @@
 - `photo_targets` 촬영 완료 상태 반영
 - 총 스캔 / 작업 대상 / 촬영 완료 카운트
 - 연결 실패 시 스캔 잠금 및 재연결
-- `📸` 콘셉트의 iPhone / Android 홈 화면 아이콘
+- 밝은 회백색 배경과 은은한 3D 카메라의 iPhone / Android 홈 화면 아이콘
 - standalone 실행용 Web App Manifest
 
 ## 테스트 데이터
