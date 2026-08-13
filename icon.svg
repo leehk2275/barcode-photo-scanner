@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="카메라 촬영">
+  <rect width="512" height="512" fill="#1f883d"/>
+  <circle cx="96" cy="88" r="72" fill="#ffffff" opacity="0.08"/>
+  <circle cx="432" cy="428" r="108" fill="#000000" opacity="0.08"/>
+  <path fill="#ffffff" d="M168 170h76l24 38h86c29 0 52 23 52 52v100c0 29-23 52-52 52H158c-29 0-52-23-52-52V260c0-29 23-52 52-52h-14l24-38Z"/>
+  <circle cx="256" cy="308" r="82" fill="#1f2328"/>
+  <circle cx="256" cy="308" r="50" fill="#54aeff"/>
+  <circle cx="240" cy="292" r="14" fill="#ffffff" opacity="0.65"/>
+  <circle cx="157" cy="258" r="18" fill="#1f883d"/>
+  <path fill="#ffd33d" stroke="#1f2328" stroke-width="10" stroke-linejoin="round" d="m366 110 15 36 37-13-15 36 36 16-36 15 13 37-36-15-16 36-15-36-37 13 15-36-36-16 36-15-13-37 36 15 16-36Z"/>
+</svg>

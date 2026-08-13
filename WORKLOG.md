@@ -4,6 +4,16 @@
 
 ## 2026-08-13
 
+### v1.2.1 모바일 홈 화면 아이콘
+
+- 앱 기능을 직관적으로 나타내는 `📸` 이모지 콘셉트 선택
+- GitHub 녹색 배경, 흰색 카메라, 노란 플래시의 고대비 벡터 아이콘 제작
+- SVG favicon 추가
+- iPhone용 180x180 Apple Touch Icon 추가
+- Android / PWA용 192x192, 512x512 PNG 아이콘 추가
+- 앱 이름을 `바코드 촬영`으로 표시하는 Web App Manifest 추가
+- iOS standalone 실행 관련 메타 태그 추가
+
 ### v1.2 Supabase sandbox 연동
 
 운영 환경과 분리된 테스트 Supabase 프로젝트에 앱을 연결함.
