@@ -160,7 +160,6 @@ const PAGE_SIZE = 1000;
 const DEVICE_STORAGE_KEY = 'barcode-photo-scanner-device-id';
 const DEVICE_ID = getOrCreateDeviceId();
 const INSTANCE_ID = createUuid();
-const HANGER_FK_CONSTRAINT = 'hanger_scans_hanger_device_fkey';
 const HANGER_SYNC_CHANNEL_NAME = `barcode-photo-scanner-hanger-${DEVICE_ID}`;
 const HANGER_SYNC_STORAGE_KEY = `${HANGER_SYNC_CHANNEL_NAME}-event`;
 const hangerSyncChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel(HANGER_SYNC_CHANNEL_NAME) : null;
@@ -277,11 +276,6 @@ function getOrCreateDeviceId(){
   }catch(_error){
     return createUuid();
   }
-}
-
-function isStaleHangerError(error){
-  return error?.code === '23503'
-    && `${error.message || ''} ${error.details || ''}`.includes(HANGER_FK_CONSTRAINT);
 }
 
 function isDuplicateScanError(error){
@@ -414,35 +408,6 @@ async function loadActiveHanger(){
   return null;
 }
 
-async function createActiveHanger(){
-  if(activeHanger) return activeHanger;
-  const { data: created, error: createError } = await supabase
-    .from('scan_hangers')
-    .insert({device_id:DEVICE_ID,hanger_number:nextHangerNumber,status:'active'})
-    .select('id,hanger_number,status,created_at')
-    .single();
-  if(createError?.code === '23505'){
-    const { data: concurrent, error: concurrentError } = await supabase
-      .from('scan_hangers')
-      .select('id,hanger_number,status,created_at')
-      .eq('device_id',DEVICE_ID)
-      .eq('status','active')
-      .order('hanger_number',{ascending:false})
-      .limit(1)
-      .maybeSingle();
-    if(concurrentError) throw concurrentError;
-    if(concurrent){
-      nextHangerNumber = concurrent.hanger_number;
-      activeHanger = concurrent;
-      return concurrent;
-    }
-  }
-  if(createError) throw createError;
-  nextHangerNumber = created.hanger_number;
-  activeHanger = created;
-  return created;
-}
-
 async function loadHangerState(){
   activeHanger = await loadActiveHanger();
   const { count: totalCount, error: totalError } = await supabase
@@ -515,30 +480,6 @@ async function synchronizeHangerState({message='',onlyWhenChanged=false,force=fa
   }
 }
 
-async function verifyActiveHanger(){
-  if(!activeHanger){
-    await createActiveHanger();
-    return false;
-  }
-
-  const { data, error } = await supabase
-    .from('scan_hangers')
-    .select('id,hanger_number,status,created_at')
-    .eq('id',activeHanger.id)
-    .eq('device_id',DEVICE_ID)
-    .eq('status','active')
-    .maybeSingle();
-  if(error) throw error;
-  if(data){
-    activeHanger = data;
-    return false;
-  }
-
-  await synchronizeHangerState({message:'변경된 행거 정보를 다시 연결했습니다.',force:true});
-  if(!activeHanger) await createActiveHanger();
-  return true;
-}
-
 async function flushPendingHangerSync(){
   if(!pendingHangerSync || !canSynchronizeHangerNow()) return;
   await synchronizeHangerState({message:'다른 창에서 변경된 행거 정보를 반영했습니다.',onlyWhenChanged:true});
@@ -552,19 +493,32 @@ scanInput.addEventListener('keydown', event=>{
   if(barcode) handleScan(barcode);
 });
 
-async function insertHangerScan(barcode,target,isTarget){
-  return supabase
-    .from('hanger_scans')
-    .insert({
-      hanger_id:activeHanger.id,
-      device_id:DEVICE_ID,
-      barcode,
-      target_id:target?.id || null,
-      is_target:isTarget,
-      photo_saved:false
-    })
-    .select('id,barcode,is_target,photo_saved,scanned_at')
-    .single();
+async function insertHangerScan(barcode){
+  const previousHangerId = activeHanger?.id || null;
+  const { data, error } = await supabase.rpc('record_hanger_scan',{
+    p_device_id:DEVICE_ID,
+    p_barcode:barcode
+  });
+  if(error) return {data:null,error,recoveredHanger:false};
+
+  activeHanger = {
+    id:data.hanger_id,
+    hanger_number:data.hanger_number,
+    status:data.hanger_status,
+    created_at:data.hanger_created_at
+  };
+  nextHangerNumber = data.hanger_number;
+  return {
+    data:{
+      id:data.id,
+      barcode:data.barcode,
+      is_target:data.is_target,
+      photo_saved:data.photo_saved,
+      scanned_at:data.scanned_at
+    },
+    error:null,
+    recoveredHanger:Boolean(previousHangerId && previousHangerId !== data.hanger_id)
+  };
 }
 
 async function handleScan(barcode){
@@ -593,21 +547,14 @@ async function handleScan(barcode){
       }
     }
 
-    let recoveredHanger = await verifyActiveHanger();
-    let { data: savedScan, error } = await insertHangerScan(barcode,target,isTarget);
-    if(isStaleHangerError(error)){
-      setHangerMessage('행거 정보를 다시 연결하고 스캔을 저장하고 있습니다.',false);
-      await synchronizeHangerState({force:true});
-      if(!activeHanger) throw error;
-      ({data:savedScan,error} = await insertHangerScan(barcode,target,isTarget));
-      recoveredHanger = true;
-    }
+    const { data:savedScan, error, recoveredHanger } = await insertHangerScan(barcode);
     if(isDuplicateScanError(error)){
       await showDuplicateWarning(barcode,'같은 기기의 이전 행거 또는 현재 행거에서 이미 스캔했습니다.');
       return;
     }
     if(error) throw error;
 
+    isTarget = Boolean(savedScan.is_target);
     const entry = {id:savedScan.id,barcode,isTarget,photo:false,error:false,time:formatTime(savedScan.scanned_at)};
     logs.unshift(entry);
     logs = logs.slice(0,30);
@@ -632,11 +579,6 @@ async function handleScan(barcode){
     console.error('Failed to record hanger scan',error);
     if(isDuplicateScanError(error)){
       await showDuplicateWarning(barcode,'같은 기기의 이전 행거 또는 현재 행거에서 이미 스캔했습니다.');
-    }else if(isStaleHangerError(error)){
-      hangerReady = false;
-      setHangerMessage('행거 연결이 변경되어 스캔을 저장하지 못했습니다. 다시 연결을 눌러주세요.',true);
-      connectionErrorText.textContent = '행거 정보가 변경되었습니다. 다시 연결하면 안전하게 이어서 스캔할 수 있습니다.';
-      connectionError.classList.add('show');
     }else{
       setHangerMessage(`스캔 기록 저장 실패: ${error.message || '다시 시도해주세요.'}`,true);
     }
