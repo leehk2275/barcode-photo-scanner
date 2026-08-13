@@ -42,7 +42,7 @@ button{touch-action:manipulation}
 .scan-input:focus{border-color:#54aeff;outline:0;box-shadow:0 0 0 3px rgba(9,105,218,.18)}.scan-input:disabled{background:var(--subtle);color:var(--dim);cursor:not-allowed}
 .hint{margin-top:8px;color:var(--muted);font-size:11px;line-height:1.5;text-align:center}.hint strong{color:var(--text)}
 .hanger-actions{display:grid;grid-template-columns:.85fr 1.25fr 1.45fr;gap:8px}.hanger-action{min-height:50px;padding:10px 8px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--text);font-size:12px;font-weight:750;cursor:pointer}
-.hanger-action.reset{color:var(--red);border-color:#ff8182}.hanger-action.complete{background:#1f883d;border-color:#1f883d;color:#fff}.hanger-action:disabled{opacity:.45;cursor:not-allowed}
+.hanger-action.reset{color:var(--red);border-color:#ff8182}.hanger-action.complete{background:var(--blue);border-color:var(--blue);color:#fff}.hanger-action:disabled{opacity:.45;cursor:not-allowed}
 .hanger-message{display:none;margin-top:-4px;padding:8px 10px;border-radius:7px;background:var(--green-bg);color:var(--green);font-size:11px;line-height:1.4}.hanger-message.show{display:block}.hanger-message.error{background:var(--red-bg);color:var(--red)}
 .list{flex:1;overflow:hidden;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow)}
 .list-head{display:flex;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border-muted);background:var(--subtle);color:var(--muted);font-size:11px}
@@ -51,6 +51,7 @@ button{touch-action:manipulation}
 .tag{padding:3px 7px;border:1px solid var(--border);border-radius:999px;background:var(--subtle);color:var(--muted);font:700 9px var(--mono)}
 .tag.target{color:var(--yellow);background:var(--yellow-bg);border-color:#d4a72c}.tag.done{color:var(--green);background:var(--green-bg);border-color:#4ac26b}.tag.error{color:var(--red);background:var(--red-bg);border-color:#ff8182}
 .empty{padding:40px 20px;color:var(--muted);font-size:12px;text-align:center}.footer-note{padding:4px;color:var(--muted);font-size:10px;text-align:center}
+.full-reset{padding-top:4px}.full-reset-btn{width:100%;min-height:42px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--red);font-size:11px;font-weight:700;cursor:pointer}.full-reset-btn:disabled{color:var(--dim);opacity:.55;cursor:not-allowed}
 .modal-bg{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;padding:22px;background:rgba(31,35,40,.4)}.modal-bg.show{display:flex}
 .modal{width:min(100%,350px);padding:24px;background:#fff;border:1px solid var(--border);border-top:4px solid #bf8700;border-radius:12px;box-shadow:0 8px 24px rgba(140,149,159,.25);text-align:center}
 .warn{font-size:34px}.modal h2{margin:10px 0 6px;font-size:18px}.modal p{color:var(--muted);font-size:13px;line-height:1.55}
@@ -104,6 +105,9 @@ button{touch-action:manipulation}
     <div id="rows"><div class="empty">아직 스캔 기록이 없습니다.</div></div>
   </section>
   <div class="footer-note" id="footerNote">독립 테스트 서버 연결 · 운영 DB와 분리됨</div>
+  <section class="full-reset" aria-label="전체 작업 초기화">
+    <button class="full-reset-btn" id="fullResetBtn" type="button" disabled>전체 초기화</button>
+  </section>
 </main>
 
 <div class="modal-bg" id="targetModal" role="dialog" aria-modal="true" aria-labelledby="targetTitle">
@@ -176,6 +180,7 @@ const retryBtn = $('retryBtn');
 const deleteScanBtn = $('deleteScanBtn');
 const resetHangerBtn = $('resetHangerBtn');
 const completeHangerBtn = $('completeHangerBtn');
+const fullResetBtn = $('fullResetBtn');
 const hangerMessage = $('hangerMessage');
 const confirmModal = $('confirmModal');
 const confirmTitle = $('confirmTitle');
@@ -424,6 +429,7 @@ retryBtn.addEventListener('click',loadAppState);
 deleteScanBtn.addEventListener('click',deleteLastScan);
 resetHangerBtn.addEventListener('click',resetCurrentHanger);
 completeHangerBtn.addEventListener('click',completeCurrentHanger);
+fullResetBtn.addEventListener('click',resetAllHistory);
 confirmCancelBtn.addEventListener('click',()=>resolveConfirmation(false));
 confirmActionBtn.addEventListener('click',()=>resolveConfirmation(true));
 
@@ -520,6 +526,34 @@ async function resetCurrentHanger(){
     currentPhotoCount = 0;
     cumulativeCount = Math.max(0,cumulativeCount-removedCount);
     setHangerMessage(`${activeHanger.hanger_number}번 행거를 초기화했습니다.`,false);
+  });
+}
+
+async function resetAllHistory(){
+  if(cumulativeCount === 0) return;
+  const confirmed = await requestConfirmation({
+    title:'전체 초기화',
+    message:`지금까지 스캔한 바코드 ${cumulativeCount}건과 모든 행거 기록을 삭제할까요? 저장된 사진과 촬영 완료 상태는 유지되며 1번 행거부터 다시 시작합니다.`,
+    actionLabel:'전체 초기화',
+    danger:true
+  });
+  if(!confirmed) return;
+  await runHangerAction(async()=>{
+    const { data: deletedHangers, error } = await supabase
+      .from('scan_hangers')
+      .delete()
+      .eq('device_id',DEVICE_ID)
+      .select('id');
+    if(error) throw error;
+    if(!deletedHangers?.length) throw new Error('삭제할 행거 기록을 확인하지 못했습니다. 다시 시도해주세요.');
+
+    activeHanger = await ensureActiveHanger();
+    logs = [];
+    currentHangerCount = 0;
+    cumulativeCount = 0;
+    currentTargetCount = 0;
+    currentPhotoCount = 0;
+    setHangerMessage('전체 스캔 기록을 초기화하고 1번 행거를 시작합니다.',false);
   });
 }
 
@@ -696,6 +730,7 @@ function renderControls(){
   deleteScanBtn.disabled = locked || currentHangerCount === 0;
   resetHangerBtn.disabled = locked || currentHangerCount === 0;
   completeHangerBtn.disabled = locked || currentHangerCount === 0;
+  fullResetBtn.disabled = locked || cumulativeCount === 0;
 }
 function escapeHtml(value){ return value.replace(/[&<>'"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char])); }
 

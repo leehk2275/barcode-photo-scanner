@@ -135,6 +135,13 @@ create policy "sandbox device can complete own hangers"
     device_id::text = ((select current_setting('request.headers', true))::jsonb ->> 'x-device-id')
   );
 
+drop policy if exists "sandbox device can delete own hangers" on public.scan_hangers;
+create policy "sandbox device can delete own hangers"
+  on public.scan_hangers for delete to anon
+  using (
+    device_id::text = ((select current_setting('request.headers', true))::jsonb ->> 'x-device-id')
+  );
+
 drop policy if exists "sandbox device can read own hanger scans" on public.hanger_scans;
 create policy "sandbox device can read own hanger scans"
   on public.hanger_scans for select to anon
@@ -167,7 +174,7 @@ create policy "sandbox device can delete own hanger scans"
   );
 
 grant usage on schema public to anon;
-grant select, insert, update on table public.scan_hangers to anon;
+grant select, insert, update, delete on table public.scan_hangers to anon;
 grant select, insert, update, delete on table public.hanger_scans to anon;
 grant usage, select on sequence public.scan_hangers_id_seq to anon;
 grant usage, select on sequence public.hanger_scans_id_seq to anon;
