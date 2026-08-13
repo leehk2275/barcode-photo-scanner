@@ -5,4 +5,372 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#f6f8fa">
 <title>작업 바코드 스캐너</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretend
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+<style>
+:root{
+  --bg:#fff;--subtle:#f6f8fa;--border:#d0d7de;--border-muted:#d8dee4;
+  --text:#1f2328;--muted:#656d76;--dim:#8c959f;--blue:#0969da;
+  --green:#1a7f37;--green-bg:#dafbe1;--red:#cf222e;--red-bg:#ffebe9;
+  --yellow:#9a6700;--yellow-bg:#fff8c5;--shadow:0 1px 0 rgba(31,35,40,.04);
+  --sans:'Pretendard Variable','Pretendard',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Consolas,'Liberation Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--bg);color:var(--text);min-height:100%;font-family:var(--sans)}
+button,input{font:inherit}
+button{touch-action:manipulation}
+.app{max-width:480px;min-height:100dvh;margin:0 auto;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:12px}
+.header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:var(--subtle);border:1px solid var(--border);border-radius:10px}
+.brand-name{font-size:15px;font-weight:700}.brand-sub{margin-top:3px;color:var(--muted);font:9px var(--mono);letter-spacing:1.2px}
+.status{flex:0 0 auto;padding:5px 9px;border:1px solid var(--border);border-radius:999px;background:#fff;color:var(--muted);font:700 10px var(--mono)}
+.status.online{color:var(--green);background:var(--green-bg);border-color:#4ac26b}.status.error{color:var(--red);background:var(--red-bg);border-color:#ff8182}
+.connection{display:none;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid #ff8182;border-radius:8px;background:var(--red-bg);color:var(--red);font-size:12px;line-height:1.4}
+.connection.show{display:flex}.retry-btn{flex:0 0 auto;padding:6px 9px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:11px;font-weight:600;cursor:pointer}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.stat{padding:12px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow)}
+.stat-label{color:var(--muted);font:9px var(--mono);letter-spacing:.8px}.stat-value{margin-top:5px;font:700 24px var(--mono)}
+.scan-card{padding:16px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow)}
+.scan-title{margin-bottom:10px;font-size:13px;font-weight:700}.scan-input{width:100%;padding:15px 16px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font:600 16px var(--mono);text-align:center;letter-spacing:1px;box-shadow:inset 0 1px 0 rgba(208,215,222,.2)}
+.scan-input:focus{border-color:#54aeff;outline:0;box-shadow:0 0 0 3px rgba(9,105,218,.18)}.scan-input:disabled{background:var(--subtle);color:var(--dim);cursor:not-allowed}
+.hint{margin-top:8px;color:var(--muted);font-size:11px;line-height:1.5;text-align:center}.hint strong{color:var(--text)}
+.list{flex:1;overflow:hidden;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow)}
+.list-head{display:flex;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border-muted);background:var(--subtle);color:var(--muted);font-size:11px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border-muted)}.row:last-child{border-bottom:0}
+.code{font:600 12px var(--mono)}.time{margin-top:3px;color:var(--muted);font:10px var(--mono)}
+.tag{padding:3px 7px;border:1px solid var(--border);border-radius:999px;background:var(--subtle);color:var(--muted);font:700 9px var(--mono)}
+.tag.target{color:var(--yellow);background:var(--yellow-bg);border-color:#d4a72c}.tag.done{color:var(--green);background:var(--green-bg);border-color:#4ac26b}.tag.error{color:var(--red);background:var(--red-bg);border-color:#ff8182}
+.empty{padding:40px 20px;color:var(--muted);font-size:12px;text-align:center}.footer-note{padding:4px;color:var(--muted);font-size:10px;text-align:center}
+.modal-bg{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;padding:22px;background:rgba(31,35,40,.4)}.modal-bg.show{display:flex}
+.modal{width:min(100%,350px);padding:24px;background:#fff;border:1px solid var(--border);border-top:4px solid #bf8700;border-radius:12px;box-shadow:0 8px 24px rgba(140,149,159,.25);text-align:center}
+.warn{font-size:34px}.modal h2{margin:10px 0 6px;font-size:18px}.modal p{color:var(--muted);font-size:13px;line-height:1.55}
+.target-code{margin:14px 0;padding:10px;border:1px solid #d4a72c;border-radius:8px;background:var(--yellow-bg);color:var(--yellow);font:700 15px var(--mono)}
+.actions{display:flex;flex-direction:column;gap:8px;margin-top:16px}.btn{padding:13px 14px;border-radius:6px;border:1px solid rgba(31,35,40,.15);font-size:14px;font-weight:600;cursor:pointer}
+.btn:disabled{opacity:.55;cursor:not-allowed}.btn-primary{background:#1f883d;color:#fff;box-shadow:0 1px 0 rgba(31,35,40,.1)}.btn-primary:hover:not(:disabled){background:#1a7f37}.btn-secondary{background:var(--subtle);color:var(--text);border-color:var(--border)}
+.camera-input{display:none}.preview{display:none;margin-top:14px}.preview.show{display:block}.preview img{width:100%;max-height:280px;object-fit:cover;border:1px solid var(--border);border-radius:8px}
+.preview-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.save-status{display:none;margin-top:10px;padding:9px;border-radius:6px;background:var(--subtle);color:var(--muted);font-size:12px;line-height:1.4}.save-status.show{display:block}.save-status.error{background:var(--red-bg);color:var(--red)}
+@media (prefers-reduced-motion:no-preference){.modal{animation:modal-in .14s ease-out}@keyframes modal-in{from{transform:translateY(8px);opacity:.7}to{transform:none;opacity:1}}}
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="header">
+    <div><div class="brand-name">작업 바코드 스캔</div><div class="brand-sub">MARKET IN U · SUPABASE TEST</div></div>
+    <div class="status" id="connectionStatus">연결 중</div>
+  </header>
+
+  <div class="connection" id="connectionError">
+    <span id="connectionErrorText">작업 대상 목록을 불러오지 못했습니다.</span>
+    <button class="retry-btn" id="retryBtn" type="button">다시 연결</button>
+  </div>
+
+  <section class="stats" aria-label="현재 세션 통계">
+    <div class="stat"><div class="stat-label">TOTAL</div><div class="stat-value" id="totalCount">0</div></div>
+    <div class="stat"><div class="stat-label">TARGET</div><div class="stat-value" id="targetCount">0</div></div>
+    <div class="stat"><div class="stat-label">PHOTO</div><div class="stat-value" id="photoCount">0</div></div>
+  </section>
+
+  <section class="scan-card">
+    <div class="scan-title">바코드를 스캔해주세요</div>
+    <input id="scanInput" class="scan-input" autocomplete="off" autocapitalize="characters" inputmode="none" placeholder="작업 목록 연결 중" disabled>
+    <div class="hint" id="scanHint">테스트 Supabase에서 작업 대상 목록을 불러오고 있습니다.</div>
+  </section>
+
+  <section class="list">
+    <div class="list-head"><span>최근 스캔</span><span id="lastCode">-</span></div>
+    <div id="rows"><div class="empty">아직 스캔 기록이 없습니다.</div></div>
+  </section>
+  <div class="footer-note" id="footerNote">독립 테스트 서버 연결 · 운영 DB와 분리됨</div>
+</main>
+
+<div class="modal-bg" id="targetModal" role="dialog" aria-modal="true" aria-labelledby="targetTitle">
+  <div class="modal">
+    <div class="warn" aria-hidden="true">⚠️</div>
+    <h2 id="targetTitle">작업이 필요한 바코드입니다</h2>
+    <p>현재 상품 사진 촬영이 필요한 대상으로 등록되어 있습니다.</p>
+    <div class="target-code" id="modalBarcode">-</div>
+    <div id="beforePhoto" class="actions">
+      <button class="btn btn-primary" id="cameraBtn" type="button">📷 사진 촬영</button>
+      <button class="btn btn-secondary" id="laterBtn" type="button">나중에 촬영</button>
+    </div>
+    <input id="cameraInput" class="camera-input" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment">
+    <div class="preview" id="previewBox">
+      <img id="previewImg" alt="촬영 미리보기">
+      <div class="save-status" id="saveStatus" aria-live="polite"></div>
+      <div class="preview-actions">
+        <button class="btn btn-secondary" id="retakeBtn" type="button">다시 촬영</button>
+        <button class="btn btn-primary" id="saveBtn" type="button">저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/+esm';
+
+const SUPABASE_URL = 'https://rbifmyvpilvjqfmrfvhr.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_kjSAGL7Fev9ttgIoJ7B4aQ_tAAALQ7n';
+const STORAGE_BUCKET = 'item-photos';
+const PAGE_SIZE = 1000;
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+});
+
+const $ = id => document.getElementById(id);
+const scanInput = $('scanInput');
+const targetModal = $('targetModal');
+const modalBarcode = $('modalBarcode');
+const cameraInput = $('cameraInput');
+const cameraBtn = $('cameraBtn');
+const laterBtn = $('laterBtn');
+const previewBox = $('previewBox');
+const previewImg = $('previewImg');
+const retakeBtn = $('retakeBtn');
+const saveBtn = $('saveBtn');
+const beforePhoto = $('beforePhoto');
+const rows = $('rows');
+const saveStatus = $('saveStatus');
+const connectionStatus = $('connectionStatus');
+const connectionError = $('connectionError');
+const connectionErrorText = $('connectionErrorText');
+const retryBtn = $('retryBtn');
+
+let logs = [];
+let targets = new Map();
+let currentTarget = null;
+let currentFile = null;
+let previewUrl = null;
+let currentStoragePath = null;
+let currentPhotoRecordSaved = false;
+let targetListReady = false;
+let isSaving = false;
+
+function normalizeBarcode(value){ return value.trim().replace(/\s+/g, '').toUpperCase(); }
+function nowTime(){ return new Intl.DateTimeFormat('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date()); }
+function vibrate(pattern){ if(navigator.vibrate) navigator.vibrate(pattern); }
+function refocus(){ if(targetListReady && !targetModal.classList.contains('show')) setTimeout(()=>scanInput.focus(),80); }
+
+function playWarningTone(){
+  try{
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if(!AudioContext) return;
+    const context = new AudioContext();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = 'sine';
+    oscillator.frequency.value = 880;
+    gain.gain.setValueAtTime(.08, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.001, context.currentTime + .16);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + .16);
+    oscillator.addEventListener('ended',()=>context.close().catch(()=>{}),{once:true});
+  }catch(_error){ /* 브라우저 정책상 차단되면 진동만 사용 */ }
+}
+
+async function loadTargets(){
+  targetListReady = false;
+  scanInput.disabled = true;
+  scanInput.placeholder = '작업 목록 연결 중';
+  connectionStatus.textContent = '연결 중';
+  connectionStatus.className = 'status';
+  connectionError.classList.remove('show');
+  retryBtn.disabled = true;
+
+  try{
+    const loaded = new Map();
+    for(let from = 0; ; from += PAGE_SIZE){
+      const { data, error } = await supabase
+        .from('photo_targets')
+        .select('id,barcode,status,completed_at')
+        .order('id', { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+      if(error) throw error;
+      for(const target of data) loaded.set(normalizeBarcode(target.barcode), target);
+      if(data.length < PAGE_SIZE) break;
+    }
+    targets = loaded;
+    targetListReady = true;
+    scanInput.disabled = false;
+    scanInput.placeholder = 'SCAN BARCODE';
+    connectionStatus.textContent = 'ONLINE';
+    connectionStatus.className = 'status online';
+    $('scanHint').innerHTML = `물리 바코드 스캐너 입력 후 Enter 기준으로 판정합니다.<br><strong>작업 대상 ${targets.size.toLocaleString()}건 연결됨</strong>`;
+    $('footerNote').textContent = `테스트 Supabase 연결 · 작업 대상 ${targets.size.toLocaleString()}건 · 운영 DB와 분리됨`;
+    refocus();
+  }catch(error){
+    console.error('Failed to load photo targets', error);
+    targets = new Map();
+    connectionStatus.textContent = 'ERROR';
+    connectionStatus.className = 'status error';
+    connectionErrorText.textContent = '작업 대상 목록을 불러오지 못했습니다. 네트워크를 확인한 뒤 다시 연결해주세요.';
+    connectionError.classList.add('show');
+    $('scanHint').textContent = '목록 연결 전에는 누락 방지를 위해 스캔할 수 없습니다.';
+  }finally{
+    retryBtn.disabled = false;
+  }
+}
+
+scanInput.addEventListener('keydown', event=>{
+  if(event.key !== 'Enter' || !targetListReady || targetModal.classList.contains('show')) return;
+  event.preventDefault();
+  const barcode = normalizeBarcode(scanInput.value);
+  scanInput.value = '';
+  if(barcode) handleScan(barcode);
+});
+
+function handleScan(barcode){
+  const target = targets.get(barcode) || null;
+  const isTarget = Boolean(target);
+  const alreadyCompleted = target?.status === 'completed';
+  const entry = {barcode,isTarget,photo:alreadyCompleted,error:false,time:nowTime()};
+  logs.unshift(entry);
+  render();
+
+  if(target?.status === 'pending'){
+    currentTarget = target;
+    modalBarcode.textContent = barcode;
+    scanInput.disabled = true;
+    vibrate([180,80,180]);
+    playWarningTone();
+    targetModal.classList.add('show');
+  }else{
+    vibrate(alreadyCompleted ? [60,40,60] : 35);
+    refocus();
+  }
+}
+
+cameraBtn.addEventListener('click',()=>cameraInput.click());
+laterBtn.addEventListener('click',()=>closeModal());
+retakeBtn.addEventListener('click',()=>{ if(!isSaving) cameraInput.click(); });
+retryBtn.addEventListener('click',loadTargets);
+
+cameraInput.addEventListener('change',event=>{
+  const file = event.target.files?.[0];
+  if(!file) return;
+  const mimeType = resolveMimeType(file);
+  if(!mimeType){
+    setSaveStatus('지원하지 않는 이미지 형식입니다.',true);
+    cameraInput.value = '';
+    return;
+  }
+  releasePreviewUrl();
+  currentFile = file;
+  previewUrl = URL.createObjectURL(file);
+  previewImg.src = previewUrl;
+  beforePhoto.style.display = 'none';
+  previewBox.classList.add('show');
+  setSaveStatus('',false);
+});
+
+saveBtn.addEventListener('click',savePhoto);
+
+async function savePhoto(){
+  if(isSaving || !currentFile || !currentTarget) return;
+  isSaving = true;
+  setModalButtonsDisabled(true);
+  setSaveStatus('사진을 테스트 서버에 저장하고 있습니다.',false);
+
+  const mimeType = resolveMimeType(currentFile);
+  const extension = extensionForMimeType(mimeType);
+  const uniqueId = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const storagePath = currentStoragePath || `${currentTarget.barcode}/${new Date().toISOString().replace(/[:.]/g,'-')}-${uniqueId}.${extension}`;
+
+  try{
+    if(!currentStoragePath){
+      const { error: uploadError } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .upload(storagePath,currentFile,{cacheControl:'3600',contentType:mimeType,upsert:false});
+      if(uploadError) throw new Error(`사진 업로드 실패: ${uploadError.message}`);
+      currentStoragePath = storagePath;
+    }
+
+    if(!currentPhotoRecordSaved){
+      const { error: insertError } = await supabase.from('item_photos').insert({
+        barcode:currentTarget.barcode,
+        target_id:currentTarget.id,
+        storage_path:currentStoragePath,
+        device_info:navigator.userAgent.slice(0,500)
+      });
+      if(insertError) throw new Error(`사진 기록 저장 실패: ${insertError.message}`);
+      currentPhotoRecordSaved = true;
+    }
+
+    const completedAt = new Date().toISOString();
+    const { data: updated, error: updateError } = await supabase
+      .from('photo_targets')
+      .update({status:'completed',completed_at:completedAt})
+      .eq('id',currentTarget.id)
+      .eq('status','pending')
+      .select('id,status,completed_at')
+      .maybeSingle();
+    if(updateError) throw new Error(`작업 완료 처리 실패: ${updateError.message}`);
+
+    const latestTarget = updated || {...currentTarget,status:'completed',completed_at:completedAt};
+    targets.set(currentTarget.barcode,latestTarget);
+    const match = logs.find(item=>item.barcode===currentTarget.barcode && item.isTarget && !item.photo);
+    if(match) match.photo = true;
+    render();
+    setSaveStatus('저장 완료',false);
+    vibrate([60,40,60]);
+    setTimeout(()=>closeModal(),350);
+  }catch(error){
+    console.error('Failed to save photo',error);
+    const match = logs.find(item=>item.barcode===currentTarget?.barcode && item.isTarget && !item.photo);
+    if(match) match.error = true;
+    render();
+    setSaveStatus(error.message || '저장에 실패했습니다. 다시 시도해주세요.',true);
+  }finally{
+    isSaving = false;
+    setModalButtonsDisabled(false);
+  }
+}
+
+function resolveMimeType(file){
+  const allowed = new Set(['image/jpeg','image/png','image/webp','image/heic','image/heif']);
+  if(allowed.has(file.type)) return file.type;
+  const ext = file.name.split('.').pop()?.toLowerCase();
+  return ({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',heic:'image/heic',heif:'image/heif'})[ext] || null;
+}
+function extensionForMimeType(mimeType){ return ({'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/heic':'heic','image/heif':'heif'})[mimeType] || 'jpg'; }
+function setModalButtonsDisabled(disabled){ saveBtn.disabled=disabled;retakeBtn.disabled=disabled||Boolean(currentStoragePath);laterBtn.disabled=disabled;cameraBtn.disabled=disabled;saveBtn.textContent=disabled?'저장 중…':'저장'; }
+function setSaveStatus(message,isError){ saveStatus.textContent=message;saveStatus.className=`save-status${message?' show':''}${isError?' error':''}`; }
+function releasePreviewUrl(){ if(previewUrl){ URL.revokeObjectURL(previewUrl);previewUrl=null; } }
+
+function closeModal(){
+  if(isSaving) return;
+  targetModal.classList.remove('show');
+  beforePhoto.style.display = 'flex';
+  previewBox.classList.remove('show');
+  releasePreviewUrl();
+  previewImg.removeAttribute('src');
+  cameraInput.value = '';
+  currentTarget = null;
+  currentFile = null;
+  currentStoragePath = null;
+  currentPhotoRecordSaved = false;
+  setSaveStatus('',false);
+  scanInput.disabled = !targetListReady;
+  refocus();
+}
+
+function render(){
+  $('totalCount').textContent = logs.length;
+  $('targetCount').textContent = logs.filter(item=>item.isTarget).length;
+  $('photoCount').textContent = logs.filter(item=>item.photo).length;
+  $('lastCode').textContent = logs[0]?.barcode || '-';
+  if(!logs.length){ rows.innerHTML='<div class="empty">아직 스캔 기록이 없습니다.</div>';return; }
+  rows.innerHTML = logs.slice(0,30).map(item=>{
+    const label=item.error?'저장오류':item.photo?'촬영완료':item.isTarget?'작업대상':'정상';
+    const tagClass=item.error?'error':item.photo?'done':item.isTarget?'target':'normal';
+    return `<div class="row"><div><div class="code">${escapeHtml(item.barcode)}</div><div class="time">${item.time}</div></div><div class="tag ${tagClass}">${label}</div></div>`;
+  }).join('');
+}
+function escapeHtml(value){ return value.replace(/[&<>'"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char])); }
+
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refocus(); });
+window.addEventListener('beforeunload',releasePreviewUrl);
+loadTargets();
+</script>
+</body>
+</html>

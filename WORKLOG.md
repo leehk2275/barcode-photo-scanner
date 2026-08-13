@@ -4,6 +4,52 @@
 
 ## 2026-08-13
 
+### v1.2 Supabase sandbox 연동
+
+운영 환경과 분리된 테스트 Supabase 프로젝트에 앱을 연결함.
+
+연결 대상:
+
+- 프로젝트: `leehk2275_barcode-photo-scanner`
+- project ref: `rbifmyvpilvjqfmrfvhr`
+- 작업 대상: `public.photo_targets`
+- 사진 메타데이터: `public.item_photos`
+- 이미지 파일: Storage `item-photos`
+
+데이터:
+
+- `온라인_바코드목록_취합_260812.xlsx`의 `Sheet1` A열 바코드 529건 등록
+- 기존 모바일 테스트 샘플 3건 유지
+- 총 532건, 전부 `pending` 상태로 준비
+
+앱 수정 사항:
+
+- 손상되어 중간에 잘린 `index.html`을 정상 페이지로 복원
+- Supabase JS를 `2.112.3`으로 고정해 로드
+- publishable key와 RLS를 사용하는 브라우저 직접 연결
+- 앱 시작 시 `photo_targets`를 페이지 단위로 전체 조회
+- 대상 목록 로딩 실패 시 스캔을 잠가 누락 판정 방지
+- `pending` 대상 스캔 시 촬영 경고 팝업 표시
+- `completed` 대상은 재촬영 팝업 없이 촬영 완료로 표시
+- 촬영 파일을 `item-photos/{barcode}/...` 경로에 업로드
+- 업로드 후 `item_photos`에 바코드, target id, Storage 경로, 기기 정보 기록
+- 마지막으로 `photo_targets`를 `completed`로 변경
+- 부분 실패 후 저장 재시도 시 이미 성공한 업로드/메타데이터 단계를 반복하지 않도록 처리
+- 팝업 중 추가 스캔 잠금, iOS 경고음, Object URL 해제 유지
+- GitHub 기본 라이트 UI 단일 스타일로 재구성
+
+검증:
+
+- HTML 모듈 JavaScript 문법 검사 통과
+- DOM id 중복 검사 통과
+- Supabase 연동 대상 문자열 및 고정 SDK 버전 검사 통과
+
+남은 테스트:
+
+- GitHub Pages 배포본에서 대상 532건 로딩 확인
+- Android / iPhone에서 실제 촬영 파일 업로드 E2E 확인
+- 테스트 완료 후 초기 샘플 3건 정리
+
 ### v1.1 mobile-test 보완
 
 Android / iOS 실기기 테스트 전에 공통 안정성 보완을 진행함.
