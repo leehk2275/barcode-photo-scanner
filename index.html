@@ -51,6 +51,7 @@ button{touch-action:manipulation}
 .tag{padding:3px 7px;border:1px solid var(--border);border-radius:999px;background:var(--subtle);color:var(--muted);font:700 9px var(--mono)}
 .tag.target{color:var(--yellow);background:var(--yellow-bg);border-color:#d4a72c}.tag.done{color:var(--green);background:var(--green-bg);border-color:#4ac26b}.tag.error{color:var(--red);background:var(--red-bg);border-color:#ff8182}
 .empty{padding:40px 20px;color:var(--muted);font-size:12px;text-align:center}.footer-note{padding:4px;color:var(--muted);font-size:10px;text-align:center}
+.result-export{padding-top:4px}.result-export-btn{width:100%;min-height:42px;padding:9px 12px;border:1px solid var(--blue);border-radius:8px;background:#fff;color:var(--blue);font-size:11px;font-weight:700;cursor:pointer}.result-export-btn:disabled{color:var(--dim);border-color:var(--border);opacity:.55;cursor:not-allowed}.result-export-status{display:none;margin-top:7px;color:var(--muted);font-size:10px;line-height:1.4;text-align:center}.result-export-status.show{display:block}.result-export-status.error{color:var(--red)}
 .full-reset{padding-top:4px}.full-reset-btn{width:100%;min-height:42px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--red);font-size:11px;font-weight:700;cursor:pointer}.full-reset-btn:disabled{color:var(--dim);opacity:.55;cursor:not-allowed}
 .modal-bg{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;padding:22px;background:rgba(31,35,40,.4)}.modal-bg.show{display:flex}
 .modal{width:min(100%,350px);padding:24px;background:#fff;border:1px solid var(--border);border-top:4px solid #bf8700;border-radius:12px;box-shadow:0 8px 24px rgba(140,149,159,.25);text-align:center}
@@ -89,7 +90,7 @@ button{touch-action:manipulation}
 
   <section class="scan-card">
     <div class="scan-title">바코드를 스캔해주세요</div>
-    <input id="scanInput" class="scan-input" autocomplete="off" autocapitalize="characters" inputmode="none" placeholder="작업 목록 연결 중" disabled>
+    <input id="scanInput" class="scan-input" lang="en" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" inputmode="none" placeholder="작업 목록 연결 중" disabled>
     <div class="hint" id="scanHint">테스트 Supabase에서 작업 대상 목록을 불러오고 있습니다.</div>
   </section>
 
@@ -103,6 +104,10 @@ button{touch-action:manipulation}
   <section class="list">
     <div class="list-head"><span>최근 스캔</span><span id="lastCode">-</span></div>
     <div id="rows"><div class="empty">아직 스캔 기록이 없습니다.</div></div>
+  </section>
+  <section class="result-export" aria-label="작업 결과 다운로드">
+    <button class="result-export-btn" id="exportResultBtn" type="button" disabled>결과 엑셀 다운로드</button>
+    <div class="result-export-status" id="exportResultStatus" aria-live="polite"></div>
   </section>
   <div class="footer-note" id="footerNote">독립 테스트 서버 연결 · 운영 DB와 분리됨</div>
   <section class="full-reset" aria-label="전체 작업 초기화">
@@ -150,6 +155,7 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 const SUPABASE_URL = 'https://rbifmyvpilvjqfmrfvhr.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_kjSAGL7Fev9ttgIoJ7B4aQ_tAAALQ7n';
 const STORAGE_BUCKET = 'item-photos';
+const EXCELJS_MODULE_URL = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/+esm';
 const PAGE_SIZE = 1000;
 const DEVICE_STORAGE_KEY = 'barcode-photo-scanner-device-id';
 const DEVICE_ID = getOrCreateDeviceId();
@@ -186,6 +192,8 @@ const deleteScanBtn = $('deleteScanBtn');
 const resetHangerBtn = $('resetHangerBtn');
 const completeHangerBtn = $('completeHangerBtn');
 const fullResetBtn = $('fullResetBtn');
+const exportResultBtn = $('exportResultBtn');
+const exportResultStatus = $('exportResultStatus');
 const hangerMessage = $('hangerMessage');
 const confirmModal = $('confirmModal');
 const confirmTitle = $('confirmTitle');
@@ -208,17 +216,45 @@ let isSaving = false;
 let isRecordingScan = false;
 let isHangerBusy = false;
 let isSyncingHanger = false;
+let isExporting = false;
 let pendingHangerSync = false;
 let currentHangerCount = 0;
 let cumulativeCount = 0;
 let currentTargetCount = 0;
 let currentPhotoCount = 0;
 let confirmResolver = null;
+let excelJsPromise = null;
 
-function normalizeBarcode(value){ return value.trim().replace(/\s+/g, '').toUpperCase(); }
-function formatTime(value=new Date()){ return new Intl.DateTimeFormat('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date(value)); }
+const HANGUL_INITIAL_KEYS = ['r','R','s','e','E','f','a','q','Q','t','T','d','w','W','c','z','x','v','g'];
+const HANGUL_MEDIAL_KEYS = ['k','o','i','O','j','p','u','P','h','hk','ho','hl','y','n','nj','np','nl','b','m','ml','l'];
+const HANGUL_FINAL_KEYS = ['','r','R','rt','s','sw','sg','e','f','fr','fa','fq','ft','fx','fv','fg','a','q','qt','t','T','d','w','c','z','x','v','g'];
+const HANGUL_JAMO_KEYS = new Map(Object.entries({
+  'ㄱ':'r','ㄲ':'R','ㄳ':'rt','ㄴ':'s','ㄵ':'sw','ㄶ':'sg','ㄷ':'e','ㄸ':'E','ㄹ':'f','ㄺ':'fr','ㄻ':'fa','ㄼ':'fq','ㄽ':'ft','ㄾ':'fx','ㄿ':'fv','ㅀ':'fg','ㅁ':'a','ㅂ':'q','ㅃ':'Q','ㅄ':'qt','ㅅ':'t','ㅆ':'T','ㅇ':'d','ㅈ':'w','ㅉ':'W','ㅊ':'c','ㅋ':'z','ㅌ':'x','ㅍ':'v','ㅎ':'g',
+  'ㅏ':'k','ㅐ':'o','ㅑ':'i','ㅒ':'O','ㅓ':'j','ㅔ':'p','ㅕ':'u','ㅖ':'P','ㅗ':'h','ㅘ':'hk','ㅙ':'ho','ㅚ':'hl','ㅛ':'y','ㅜ':'n','ㅝ':'nj','ㅞ':'np','ㅟ':'nl','ㅠ':'b','ㅡ':'m','ㅢ':'ml','ㅣ':'l'
+}));
+
+function hangulKeyboardToLatin(value){
+  let result = '';
+  for(const char of String(value || '')){
+    const code = char.charCodeAt(0);
+    if(code >= 0xac00 && code <= 0xd7a3){
+      const offset = code - 0xac00;
+      result += HANGUL_INITIAL_KEYS[Math.floor(offset / 588)];
+      result += HANGUL_MEDIAL_KEYS[Math.floor((offset % 588) / 28)];
+      result += HANGUL_FINAL_KEYS[offset % 28];
+    }else{
+      result += HANGUL_JAMO_KEYS.get(char) || char;
+    }
+  }
+  return result;
+}
+
+function normalizeBarcode(value){ return hangulKeyboardToLatin(value).trim().replace(/\s+/g, '').toUpperCase(); }
+function formatTime(value=new Date()){ return new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date(value)); }
+function formatKstDateTime(value){ return value ? new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date(value)) : ''; }
+function toKstExcelDate(value){ return value ? new Date(new Date(value).getTime() + 9 * 60 * 60 * 1000) : null; }
 function vibrate(pattern){ if(navigator.vibrate) navigator.vibrate(pattern); }
-function appReady(){ return targetListReady && hangerReady && !isHangerBusy && !isRecordingScan && !isSyncingHanger; }
+function appReady(){ return targetListReady && hangerReady && !isHangerBusy && !isRecordingScan && !isSyncingHanger && !isExporting; }
 function refocus(){ if(appReady() && !targetModal.classList.contains('show') && !confirmModal.classList.contains('show')) setTimeout(()=>scanInput.focus(),80); }
 
 function createUuid(){
@@ -241,6 +277,11 @@ function getOrCreateDeviceId(){
 function isStaleHangerError(error){
   return error?.code === '23503'
     && `${error.message || ''} ${error.details || ''}`.includes(HANGER_FK_CONSTRAINT);
+}
+
+function isDuplicateScanError(error){
+  return error?.code === '23505'
+    && `${error.message || ''} ${error.details || ''}`.includes('hanger_scans_device_barcode_key');
 }
 
 function createHangerSyncEvent(type){
@@ -331,7 +372,7 @@ async function loadTargetsData(){
   for(let from = 0; ; from += PAGE_SIZE){
     const { data, error } = await supabase
       .from('photo_targets')
-      .select('id,barcode,status,completed_at')
+      .select('id,barcode,status,note,created_at,completed_at,completed_at_kst')
       .order('id', { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
     if(error) throw error;
@@ -479,7 +520,7 @@ scanInput.addEventListener('keydown', event=>{
   if(barcode) handleScan(barcode);
 });
 
-async function insertHangerScan(barcode,target,isTarget,alreadyCompleted){
+async function insertHangerScan(barcode,target,isTarget){
   return supabase
     .from('hanger_scans')
     .insert({
@@ -488,7 +529,7 @@ async function insertHangerScan(barcode,target,isTarget,alreadyCompleted){
       barcode,
       target_id:target?.id || null,
       is_target:isTarget,
-      photo_saved:alreadyCompleted
+      photo_saved:false
     })
     .select('id,barcode,is_target,photo_saved,scanned_at')
     .single();
@@ -499,29 +540,48 @@ async function handleScan(barcode){
   isRecordingScan = true;
   scanInput.disabled = true;
   setHangerMessage('',false);
-  const target = targets.get(barcode) || null;
-  const isTarget = Boolean(target);
-  const alreadyCompleted = target?.status === 'completed';
+  let target = targets.get(barcode) || null;
+  let isTarget = Boolean(target);
 
   try{
+    if(target){
+      const { data: latestTarget, error: targetError } = await supabase
+        .from('photo_targets')
+        .select('id,barcode,status,note,created_at,completed_at,completed_at_kst')
+        .eq('id',target.id)
+        .maybeSingle();
+      if(targetError) throw targetError;
+      if(latestTarget){
+        target = latestTarget;
+        targets.set(barcode,latestTarget);
+      }
+      if(target?.status === 'completed'){
+        await showDuplicateWarning(barcode,'이미 사진 촬영까지 완료된 작업 대상입니다.');
+        return;
+      }
+    }
+
     let recoveredHanger = await verifyActiveHanger();
-    let { data: savedScan, error } = await insertHangerScan(barcode,target,isTarget,alreadyCompleted);
+    let { data: savedScan, error } = await insertHangerScan(barcode,target,isTarget);
     if(isStaleHangerError(error)){
       setHangerMessage('행거 정보를 다시 연결하고 스캔을 저장하고 있습니다.',false);
       await synchronizeHangerState({force:true});
       if(!activeHanger) throw error;
-      ({data:savedScan,error} = await insertHangerScan(barcode,target,isTarget,alreadyCompleted));
+      ({data:savedScan,error} = await insertHangerScan(barcode,target,isTarget));
       recoveredHanger = true;
+    }
+    if(isDuplicateScanError(error)){
+      await showDuplicateWarning(barcode,'같은 기기의 이전 행거 또는 현재 행거에서 이미 스캔했습니다.');
+      return;
     }
     if(error) throw error;
 
-    const entry = {id:savedScan.id,barcode,isTarget,photo:alreadyCompleted,error:false,time:formatTime(savedScan.scanned_at)};
+    const entry = {id:savedScan.id,barcode,isTarget,photo:false,error:false,time:formatTime(savedScan.scanned_at)};
     logs.unshift(entry);
     logs = logs.slice(0,30);
     currentHangerCount += 1;
     cumulativeCount += 1;
     if(isTarget) currentTargetCount += 1;
-    if(alreadyCompleted) currentPhotoCount += 1;
     render();
     if(recoveredHanger) setHangerMessage('행거 정보를 다시 연결하고 스캔을 정상 저장했습니다.',false);
 
@@ -534,11 +594,13 @@ async function handleScan(barcode){
       targetModal.classList.add('show');
       renderControls();
     }else{
-      vibrate(alreadyCompleted ? [60,40,60] : 35);
+      vibrate(35);
     }
   }catch(error){
     console.error('Failed to record hanger scan',error);
-    if(isStaleHangerError(error)){
+    if(isDuplicateScanError(error)){
+      await showDuplicateWarning(barcode,'같은 기기의 이전 행거 또는 현재 행거에서 이미 스캔했습니다.');
+    }else if(isStaleHangerError(error)){
       hangerReady = false;
       setHangerMessage('행거 연결이 변경되어 스캔을 저장하지 못했습니다. 다시 연결을 눌러주세요.',true);
       connectionErrorText.textContent = '행거 정보가 변경되었습니다. 다시 연결하면 안전하게 이어서 스캔할 수 있습니다.';
@@ -556,6 +618,19 @@ async function handleScan(barcode){
   }
 }
 
+async function showDuplicateWarning(barcode,reason){
+  setHangerMessage(`${barcode} 중복 스캔이 차단되었습니다.`,true);
+  vibrate([180,80,180]);
+  playWarningTone();
+  await requestConfirmation({
+    title:'중복 바코드입니다',
+    message:`${barcode}은(는) ${reason} 수량에는 추가하지 않았습니다.`,
+    actionLabel:'확인',
+    danger:true,
+    showCancel:false
+  });
+}
+
 cameraBtn.addEventListener('click',()=>cameraInput.click());
 laterBtn.addEventListener('click',()=>closeModal());
 retakeBtn.addEventListener('click',()=>{ if(!isSaving) cameraInput.click(); });
@@ -564,15 +639,17 @@ deleteScanBtn.addEventListener('click',deleteLastScan);
 resetHangerBtn.addEventListener('click',resetCurrentHanger);
 completeHangerBtn.addEventListener('click',completeCurrentHanger);
 fullResetBtn.addEventListener('click',resetAllHistory);
+exportResultBtn.addEventListener('click',downloadResultsExcel);
 confirmCancelBtn.addEventListener('click',()=>resolveConfirmation(false));
 confirmActionBtn.addEventListener('click',()=>resolveConfirmation(true));
 
-function requestConfirmation({title,message,actionLabel='확인',danger=false}){
+function requestConfirmation({title,message,actionLabel='확인',danger=false,showCancel=true}){
   if(confirmResolver) return Promise.resolve(false);
   confirmTitle.textContent = title;
   confirmMessage.textContent = message;
   confirmActionBtn.textContent = actionLabel;
   confirmActionBtn.className = `btn ${danger?'btn-danger':'btn-warning'}`;
+  confirmCancelBtn.hidden = !showCancel;
   confirmModal.classList.add('show');
   scanInput.disabled = true;
   renderControls();
@@ -584,6 +661,7 @@ function resolveConfirmation(confirmed){
   const resolve = confirmResolver;
   confirmResolver = null;
   confirmModal.classList.remove('show');
+  confirmCancelBtn.hidden = false;
   scanInput.disabled = !appReady();
   renderControls();
   resolve(confirmed);
@@ -775,7 +853,8 @@ async function savePhoto(){
         target_id:currentTarget.id,
         storage_path:currentStoragePath,
         device_info:navigator.userAgent.slice(0,500),
-        hanger_scan_id:currentHangerScanId
+        hanger_scan_id:currentHangerScanId,
+        device_id:DEVICE_ID
       });
       if(insertError) throw new Error(`사진 기록 저장 실패: ${insertError.message}`);
       currentPhotoRecordSaved = true;
@@ -819,6 +898,213 @@ async function savePhoto(){
     isSaving = false;
     setModalButtonsDisabled(false);
   }
+}
+
+async function fetchPagedRows(queryFactory){
+  const allRows = [];
+  for(let from = 0; ; from += PAGE_SIZE){
+    const { data, error } = await queryFactory(from,from + PAGE_SIZE - 1);
+    if(error) throw error;
+    allRows.push(...data);
+    if(data.length < PAGE_SIZE) break;
+  }
+  return allRows;
+}
+
+async function loadExcelJs(){
+  if(!excelJsPromise) excelJsPromise = import(EXCELJS_MODULE_URL);
+  const module = await excelJsPromise;
+  const ExcelJS = module.default || module;
+  if(!ExcelJS.Workbook) throw new Error('엑셀 생성 모듈을 불러오지 못했습니다.');
+  return ExcelJS;
+}
+
+function publicPhotoUrl(storagePath){
+  if(!storagePath) return '';
+  return supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath).data.publicUrl;
+}
+
+function styleWorksheetHeader(worksheet){
+  const header = worksheet.getRow(1);
+  header.height = 24;
+  header.font = {name:'Pretendard',bold:true,color:{argb:'FFFFFFFF'}};
+  header.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FF0969DA'}};
+  header.alignment = {vertical:'middle',horizontal:'center'};
+  header.eachCell(cell=>{
+    cell.border = {bottom:{style:'thin',color:{argb:'FF0550AE'}}};
+  });
+  worksheet.views = [{state:'frozen',ySplit:1}];
+  worksheet.autoFilter = {from:'A1',to:worksheet.getRow(1).getCell(worksheet.columnCount).address};
+}
+
+function writeHyperlink(cell,url){
+  if(!url) return;
+  cell.value = {text:'원본 열기',hyperlink:url};
+  cell.font = {color:{argb:'FF0969DA'},underline:true};
+}
+
+async function buildResultsWorkbook({hangers,scans,photos}){
+  const ExcelJS = await loadExcelJs();
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = '작업 바코드 스캐너';
+  workbook.created = new Date();
+
+  const hangerById = new Map(hangers.map(item=>[item.id,item]));
+  const targetById = new Map([...targets.values()].map(item=>[item.id,item]));
+  const photoByScanId = new Map();
+  const photoByBarcode = new Map();
+  for(const photo of photos){
+    if(photo.hanger_scan_id) photoByScanId.set(photo.hanger_scan_id,photo);
+    photoByBarcode.set(normalizeBarcode(photo.barcode),photo);
+  }
+
+  const summary = workbook.addWorksheet('요약');
+  const scanSheet = workbook.addWorksheet('전체 스캔',{properties:{defaultRowHeight:19}});
+  scanSheet.columns = [
+    {header:'순번',key:'number',width:8},
+    {header:'행거 번호',key:'hangerNumber',width:11},
+    {header:'행거 상태',key:'hangerStatus',width:12},
+    {header:'바코드',key:'barcode',width:20},
+    {header:'Target Barcode',key:'isTarget',width:16},
+    {header:'Target ID',key:'targetId',width:11},
+    {header:'Target 상태',key:'targetStatus',width:13},
+    {header:'사진 저장',key:'photoSaved',width:11},
+    {header:'스캔 시간 (KST)',key:'scannedAt',width:21},
+    {header:'행거 완료 (KST)',key:'hangerCompletedAt',width:21},
+    {header:'Target 완료 (KST)',key:'targetCompletedAt',width:21},
+    {header:'원본 이미지',key:'originalImage',width:14},
+    {header:'Storage 경로',key:'storagePath',width:42},
+    {header:'Target 메모',key:'targetNote',width:24}
+  ];
+
+  scans.forEach((scan,index)=>{
+    const hanger = hangerById.get(scan.hanger_id) || {};
+    const target = targetById.get(scan.target_id) || targets.get(normalizeBarcode(scan.barcode)) || null;
+    const photo = photoByScanId.get(scan.id) || photoByBarcode.get(normalizeBarcode(scan.barcode)) || null;
+    const row = scanSheet.addRow({
+      number:index + 1,
+      hangerNumber:hanger.hanger_number ?? null,
+      hangerStatus:hanger.status === 'completed' ? '완료' : '진행 중',
+      barcode:scan.barcode,
+      isTarget:scan.is_target ? 'Y' : 'N',
+      targetId:target?.id ?? null,
+      targetStatus:target?.status ?? null,
+      photoSaved:photo ? 'Y' : 'N',
+      scannedAt:toKstExcelDate(scan.scanned_at),
+      hangerCompletedAt:toKstExcelDate(hanger.completed_at),
+      targetCompletedAt:toKstExcelDate(target?.completed_at),
+      storagePath:photo?.storage_path ?? null,
+      targetNote:target?.note ?? null
+    });
+    for(const column of [9,10,11]) row.getCell(column).numFmt = 'yyyy-mm-dd hh:mm:ss';
+    writeHyperlink(row.getCell(12),publicPhotoUrl(photo?.storage_path));
+  });
+  styleWorksheetHeader(scanSheet);
+
+  const photoSheet = workbook.addWorksheet('촬영 결과',{properties:{defaultRowHeight:19}});
+  photoSheet.columns = [
+    {header:'사진 ID',key:'photoId',width:10},
+    {header:'바코드',key:'barcode',width:20},
+    {header:'Target ID',key:'targetId',width:11},
+    {header:'Target 상태',key:'targetStatus',width:13},
+    {header:'Target 메모',key:'targetNote',width:24},
+    {header:'사진 저장 시간 (KST)',key:'createdAt',width:23},
+    {header:'Target 완료 (KST)',key:'completedAt',width:21},
+    {header:'행거 번호',key:'hangerNumber',width:11},
+    {header:'스캔 시간 (KST)',key:'scannedAt',width:21},
+    {header:'원본 이미지',key:'originalImage',width:14},
+    {header:'Storage 경로',key:'storagePath',width:42}
+  ];
+
+  photos.forEach(photo=>{
+    const target = targetById.get(photo.target_id) || targets.get(normalizeBarcode(photo.barcode)) || null;
+    const scan = scans.find(item=>item.id === photo.hanger_scan_id) || scans.find(item=>normalizeBarcode(item.barcode) === normalizeBarcode(photo.barcode));
+    const hanger = scan ? hangerById.get(scan.hanger_id) || {} : {};
+    const row = photoSheet.addRow({
+      photoId:photo.id,
+      barcode:photo.barcode,
+      targetId:target?.id ?? photo.target_id ?? null,
+      targetStatus:target?.status ?? null,
+      targetNote:target?.note ?? null,
+      createdAt:toKstExcelDate(photo.created_at),
+      completedAt:toKstExcelDate(target?.completed_at),
+      hangerNumber:hanger.hanger_number ?? null,
+      scannedAt:toKstExcelDate(scan?.scanned_at),
+      storagePath:photo.storage_path
+    });
+    for(const column of [6,7,9]) row.getCell(column).numFmt = 'yyyy-mm-dd hh:mm:ss';
+    writeHyperlink(row.getCell(10),publicPhotoUrl(photo.storage_path));
+  });
+  styleWorksheetHeader(photoSheet);
+
+  summary.mergeCells('A1:D1');
+  summary.getCell('A1').value = '작업 바코드 스캔 결과';
+  summary.getCell('A1').font = {name:'Pretendard',size:16,bold:true,color:{argb:'FF1F2328'}};
+  summary.getCell('A1').alignment = {vertical:'middle'};
+  summary.getRow(1).height = 30;
+  summary.getColumn('A').width = 24;
+  summary.getColumn('B').width = 24;
+  const maxScanRow = Math.max(2,scans.length + 1);
+  summary.getCell('A3').value = '전체 스캔';
+  summary.getCell('B3').value = {formula:`COUNTA('전체 스캔'!A2:A${maxScanRow})`,result:scans.length};
+  summary.getCell('A4').value = 'Target Barcode';
+  summary.getCell('B4').value = {formula:`COUNTIF('전체 스캔'!E2:E${maxScanRow},"Y")`,result:scans.filter(item=>item.is_target).length};
+  summary.getCell('A5').value = '촬영 완료';
+  summary.getCell('B5').value = {formula:`COUNTA('촬영 결과'!A2:A${Math.max(2,photos.length + 1)})`,result:photos.length};
+  summary.getCell('A7').value = '다운로드 시간 (KST)';
+  summary.getCell('B7').value = toKstExcelDate(new Date());
+  summary.getCell('B7').numFmt = 'yyyy-mm-dd hh:mm:ss';
+  summary.getCell('A9').value = '원본 이미지는 각 결과 시트의 “원본 열기” 링크로 확인할 수 있습니다.';
+  summary.mergeCells('A9:D9');
+  ['A3','A4','A5','A7'].forEach(address=>{ summary.getCell(address).font = {bold:true,color:{argb:'FF656D76'}}; });
+  ['B3','B4','B5'].forEach(address=>{ summary.getCell(address).font = {bold:true,size:14,color:{argb:'FF0969DA'}}; });
+  summary.views = [{state:'frozen',ySplit:1}];
+  return workbook;
+}
+
+async function downloadResultsExcel(){
+  if(isExporting || cumulativeCount === 0) return;
+  isExporting = true;
+  scanInput.disabled = true;
+  setExportStatus('결과 데이터를 불러오고 있습니다.',false);
+  renderControls();
+  try{
+    const [hangers,scans,allPhotos] = await Promise.all([
+      fetchPagedRows((from,to)=>supabase.from('scan_hangers').select('id,hanger_number,status,created_at,completed_at,completed_at_kst').eq('device_id',DEVICE_ID).order('hanger_number',{ascending:true}).range(from,to)),
+      fetchPagedRows((from,to)=>supabase.from('hanger_scans').select('id,hanger_id,device_id,barcode,target_id,is_target,photo_saved,scanned_at,scanned_at_kst').eq('device_id',DEVICE_ID).order('id',{ascending:true}).range(from,to)),
+      fetchPagedRows((from,to)=>supabase.from('item_photos').select('id,barcode,target_id,storage_path,created_at,created_at_kst,hanger_scan_id,device_id').order('id',{ascending:true}).range(from,to))
+    ]);
+    if(!scans.length) throw new Error('다운로드할 스캔 기록이 없습니다.');
+    const scannedBarcodes = new Set(scans.map(item=>normalizeBarcode(item.barcode)));
+    const photos = allPhotos.filter(item=>item.device_id === DEVICE_ID || scannedBarcodes.has(normalizeBarcode(item.barcode)));
+    setExportStatus('엑셀 파일을 생성하고 있습니다.',false);
+    const workbook = await buildResultsWorkbook({hangers,scans,photos});
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const timestamp = formatKstDateTime(new Date()).replace(/[-: ]/g,'');
+    link.href = url;
+    link.download = `작업_바코드_결과_${timestamp}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),30000);
+    setExportStatus(`엑셀 다운로드 완료 · 스캔 ${scans.length.toLocaleString()}건`,false);
+  }catch(error){
+    console.error('Failed to export results',error);
+    setExportStatus(error.message || '엑셀 파일 생성에 실패했습니다.',true);
+  }finally{
+    isExporting = false;
+    scanInput.disabled = !appReady();
+    renderControls();
+    refocus();
+  }
+}
+
+function setExportStatus(message,isError){
+  exportResultStatus.textContent = message;
+  exportResultStatus.className = `result-export-status${message?' show':''}${isError?' error':''}`;
 }
 
 function resolveMimeType(file){
@@ -874,10 +1160,11 @@ function render(){
 }
 
 function renderControls(){
-  const locked = !targetListReady || !hangerReady || isHangerBusy || isRecordingScan || isSaving || isSyncingHanger || targetModal.classList.contains('show') || confirmModal.classList.contains('show');
+  const locked = !targetListReady || !hangerReady || isHangerBusy || isRecordingScan || isSaving || isSyncingHanger || isExporting || targetModal.classList.contains('show') || confirmModal.classList.contains('show');
   deleteScanBtn.disabled = locked || currentHangerCount === 0;
   resetHangerBtn.disabled = locked || currentHangerCount === 0;
   completeHangerBtn.disabled = locked || currentHangerCount === 0;
+  exportResultBtn.disabled = locked || cumulativeCount === 0;
   fullResetBtn.disabled = locked || cumulativeCount === 0;
 }
 function escapeHtml(value){ return value.replace(/[&<>'"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char])); }
