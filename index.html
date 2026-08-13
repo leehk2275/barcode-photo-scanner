@@ -252,6 +252,10 @@ function hangulKeyboardToLatin(value){
 function normalizeBarcode(value){ return hangulKeyboardToLatin(value).trim().replace(/\s+/g, '').toUpperCase(); }
 function formatTime(value=new Date()){ return new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date(value)); }
 function formatKstDateTime(value){ return value ? new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date(value)) : ''; }
+function formatKstFileDate(value=new Date()){
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(value)).filter(part=>part.type!=='literal').map(part=>[part.type,part.value]));
+  return `${parts.year}.${parts.month}.${parts.day}`;
+}
 function toKstExcelDate(value){ return value ? new Date(new Date(value).getTime() + 9 * 60 * 60 * 1000) : null; }
 function vibrate(pattern){ if(navigator.vibrate) navigator.vibrate(pattern); }
 function appReady(){ return targetListReady && hangerReady && !isHangerBusy && !isRecordingScan && !isSyncingHanger && !isExporting; }
@@ -924,14 +928,26 @@ function publicPhotoUrl(storagePath){
   return supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath).data.publicUrl;
 }
 
+const EXCEL_BODY_FONT = {name:'Malgun Gothic',size:10,bold:false,color:{argb:'FF000000'}};
+const EXCEL_HEADER_FONT = {name:'Malgun Gothic',size:10,bold:true,color:{argb:'FF000000'}};
+
+function applyWorksheetTypography(worksheet,boldAddresses=[]){
+  const boldCells = new Set(boldAddresses);
+  worksheet.eachRow({includeEmpty:true},row=>{
+    row.eachCell({includeEmpty:true},cell=>{
+      cell.font = {...(boldCells.has(cell.address) ? EXCEL_HEADER_FONT : EXCEL_BODY_FONT),underline:Boolean(cell.hyperlink)};
+    });
+  });
+}
+
 function styleWorksheetHeader(worksheet){
+  applyWorksheetTypography(worksheet);
   const header = worksheet.getRow(1);
-  header.height = 24;
-  header.font = {name:'Pretendard',bold:true,color:{argb:'FFFFFFFF'}};
-  header.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FF0969DA'}};
+  header.height = 20;
+  header.font = EXCEL_HEADER_FONT;
   header.alignment = {vertical:'middle',horizontal:'center'};
   header.eachCell(cell=>{
-    cell.border = {bottom:{style:'thin',color:{argb:'FF0550AE'}}};
+    cell.border = {bottom:{style:'thin',color:{argb:'FFBFBFBF'}}};
   });
   worksheet.views = [{state:'frozen',ySplit:1}];
   worksheet.autoFilter = {from:'A1',to:worksheet.getRow(1).getCell(worksheet.columnCount).address};
@@ -940,7 +956,7 @@ function styleWorksheetHeader(worksheet){
 function writeHyperlink(cell,url){
   if(!url) return;
   cell.value = {text:'원본 열기',hyperlink:url};
-  cell.font = {color:{argb:'FF0969DA'},underline:true};
+  cell.font = {...EXCEL_BODY_FONT,underline:true};
 }
 
 async function buildResultsWorkbook({hangers,scans,photos}){
@@ -1037,11 +1053,9 @@ async function buildResultsWorkbook({hangers,scans,photos}){
   });
   styleWorksheetHeader(photoSheet);
 
-  summary.mergeCells('A1:D1');
   summary.getCell('A1').value = '작업 바코드 스캔 결과';
-  summary.getCell('A1').font = {name:'Pretendard',size:16,bold:true,color:{argb:'FF1F2328'}};
   summary.getCell('A1').alignment = {vertical:'middle'};
-  summary.getRow(1).height = 30;
+  summary.getRow(1).height = 20;
   summary.getColumn('A').width = 24;
   summary.getColumn('B').width = 24;
   const maxScanRow = Math.max(2,scans.length + 1);
@@ -1056,8 +1070,7 @@ async function buildResultsWorkbook({hangers,scans,photos}){
   summary.getCell('B7').numFmt = 'yyyy-mm-dd hh:mm:ss';
   summary.getCell('A9').value = '원본 이미지는 각 결과 시트의 “원본 열기” 링크로 확인할 수 있습니다.';
   summary.mergeCells('A9:D9');
-  ['A3','A4','A5','A7'].forEach(address=>{ summary.getCell(address).font = {bold:true,color:{argb:'FF656D76'}}; });
-  ['B3','B4','B5'].forEach(address=>{ summary.getCell(address).font = {bold:true,size:14,color:{argb:'FF0969DA'}}; });
+  applyWorksheetTypography(summary,['A1','A3','A4','A5','A7']);
   summary.views = [{state:'frozen',ySplit:1}];
   return workbook;
 }
@@ -1083,9 +1096,9 @@ async function downloadResultsExcel(){
     const blob = new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    const timestamp = formatKstDateTime(new Date()).replace(/[-: ]/g,'');
+    const fileDate = formatKstFileDate();
     link.href = url;
-    link.download = `작업_바코드_결과_${timestamp}.xlsx`;
+    link.download = `바코드_사진작업_결과_${fileDate}.xlsx`;
     document.body.appendChild(link);
     link.click();
     link.remove();
