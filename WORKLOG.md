@@ -43,10 +43,16 @@
 - HTML 모듈 JavaScript 문법 검사 통과
 - DOM id 중복 검사 통과
 - Supabase 연동 대상 문자열 및 고정 SDK 버전 검사 통과
+- publishable key + RLS를 통한 Data API 조회에서 작업 대상 532건 확인
+- Supabase Security Advisor 경고 0건 확인
+- GitHub Pages 배포 상태 `built` 확인
+- 배포본에서 `ONLINE` 및 작업 대상 532건 연결 확인
+- `G59`, `N66` 작업 대상 경고 모달과 팝업 중 스캔 잠금 확인
+- 비대상 바코드 정상 판정과 팝업 종료 후 입력 복귀 확인
+- 배포본 브라우저 콘솔 오류 및 경고 0건 확인
 
 남은 테스트:
 
-- GitHub Pages 배포본에서 대상 532건 로딩 확인
 - Android / iPhone에서 실제 촬영 파일 업로드 E2E 확인
 - 테스트 완료 후 초기 샘플 3건 정리
 
