@@ -153,6 +153,11 @@ const STORAGE_BUCKET = 'item-photos';
 const PAGE_SIZE = 1000;
 const DEVICE_STORAGE_KEY = 'barcode-photo-scanner-device-id';
 const DEVICE_ID = getOrCreateDeviceId();
+const INSTANCE_ID = createUuid();
+const HANGER_FK_CONSTRAINT = 'hanger_scans_hanger_device_fkey';
+const HANGER_SYNC_CHANNEL_NAME = `barcode-photo-scanner-hanger-${DEVICE_ID}`;
+const HANGER_SYNC_STORAGE_KEY = `${HANGER_SYNC_CHANNEL_NAME}-event`;
+const hangerSyncChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel(HANGER_SYNC_CHANNEL_NAME) : null;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -202,6 +207,8 @@ let hangerReady = false;
 let isSaving = false;
 let isRecordingScan = false;
 let isHangerBusy = false;
+let isSyncingHanger = false;
+let pendingHangerSync = false;
 let currentHangerCount = 0;
 let cumulativeCount = 0;
 let currentTargetCount = 0;
@@ -211,8 +218,8 @@ let confirmResolver = null;
 function normalizeBarcode(value){ return value.trim().replace(/\s+/g, '').toUpperCase(); }
 function formatTime(value=new Date()){ return new Intl.DateTimeFormat('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date(value)); }
 function vibrate(pattern){ if(navigator.vibrate) navigator.vibrate(pattern); }
-function appReady(){ return targetListReady && hangerReady && !isHangerBusy && !isRecordingScan; }
-function refocus(){ if(appReady() && !targetModal.classList.contains('show')) setTimeout(()=>scanInput.focus(),80); }
+function appReady(){ return targetListReady && hangerReady && !isHangerBusy && !isRecordingScan && !isSyncingHanger; }
+function refocus(){ if(appReady() && !targetModal.classList.contains('show') && !confirmModal.classList.contains('show')) setTimeout(()=>scanInput.focus(),80); }
 
 function createUuid(){
   if(crypto.randomUUID) return crypto.randomUUID();
@@ -229,6 +236,37 @@ function getOrCreateDeviceId(){
   }catch(_error){
     return createUuid();
   }
+}
+
+function isStaleHangerError(error){
+  return error?.code === '23503'
+    && `${error.message || ''} ${error.details || ''}`.includes(HANGER_FK_CONSTRAINT);
+}
+
+function createHangerSyncEvent(type){
+  return {type,deviceId:DEVICE_ID,sourceId:INSTANCE_ID,createdAt:Date.now()};
+}
+
+function broadcastHangerChange(type){
+  const event = createHangerSyncEvent(type);
+  if(hangerSyncChannel){
+    hangerSyncChannel.postMessage(event);
+    return;
+  }
+  try{
+    localStorage.setItem(HANGER_SYNC_STORAGE_KEY,JSON.stringify(event));
+    localStorage.removeItem(HANGER_SYNC_STORAGE_KEY);
+  }catch(_error){ /* 탭 동기화가 불가능해도 DB 검증으로 복구 */ }
+}
+
+function shouldAcceptHangerSync(event){
+  return event?.deviceId === DEVICE_ID && event?.sourceId !== INSTANCE_ID;
+}
+
+function canSynchronizeHangerNow(){
+  return !isRecordingScan && !isHangerBusy && !isSaving
+    && !targetModal.classList.contains('show')
+    && !confirmModal.classList.contains('show');
 }
 
 function playWarningTone(){
@@ -329,6 +367,18 @@ async function ensureActiveHanger(){
     .insert({device_id:DEVICE_ID,hanger_number:(latest?.hanger_number || 0)+1,status:'active'})
     .select('id,hanger_number,status,created_at')
     .single();
+  if(createError?.code === '23505'){
+    const { data: concurrent, error: concurrentError } = await supabase
+      .from('scan_hangers')
+      .select('id,hanger_number,status,created_at')
+      .eq('device_id',DEVICE_ID)
+      .eq('status','active')
+      .order('hanger_number',{ascending:false})
+      .limit(1)
+      .maybeSingle();
+    if(concurrentError) throw concurrentError;
+    if(concurrent) return concurrent;
+  }
   if(createError) throw createError;
   return created;
 }
@@ -358,6 +408,69 @@ async function loadHangerState(){
   currentPhotoCount = photo.count || 0;
 }
 
+async function synchronizeHangerState({message='',onlyWhenChanged=false,force=false}={}){
+  if(isSyncingHanger) return;
+  if(!force && !canSynchronizeHangerNow()){
+    pendingHangerSync = true;
+    return;
+  }
+
+  isSyncingHanger = true;
+  pendingHangerSync = false;
+  hangerReady = false;
+  scanInput.disabled = true;
+  renderControls();
+  const previousHangerId = activeHanger?.id || null;
+  try{
+    await loadHangerState();
+    hangerReady = true;
+    const changed = previousHangerId !== activeHanger?.id;
+    if(message && (!onlyWhenChanged || changed)) setHangerMessage(message,false);
+  }catch(error){
+    activeHanger = null;
+    hangerReady = false;
+    console.error('Failed to synchronize hanger state',error);
+    connectionErrorText.textContent = '행거 정보를 다시 연결하지 못했습니다. 네트워크를 확인한 뒤 다시 연결해주세요.';
+    connectionError.classList.add('show');
+    setHangerMessage('행거 연결을 확인할 수 없어 스캔을 잠갔습니다.',true);
+  }finally{
+    isSyncingHanger = false;
+    scanInput.disabled = !appReady();
+    render();
+    refocus();
+  }
+}
+
+async function verifyActiveHanger(){
+  if(!activeHanger){
+    await synchronizeHangerState({message:'행거 정보를 다시 연결했습니다.',force:true});
+    if(!activeHanger) throw new Error('행거 정보를 다시 연결하지 못했습니다.');
+    return true;
+  }
+
+  const { data, error } = await supabase
+    .from('scan_hangers')
+    .select('id,hanger_number,status,created_at')
+    .eq('id',activeHanger.id)
+    .eq('device_id',DEVICE_ID)
+    .eq('status','active')
+    .maybeSingle();
+  if(error) throw error;
+  if(data){
+    activeHanger = data;
+    return false;
+  }
+
+  await synchronizeHangerState({message:'변경된 행거 정보를 다시 연결했습니다.',force:true});
+  if(!activeHanger) throw new Error('행거 정보를 다시 연결하지 못했습니다.');
+  return true;
+}
+
+async function flushPendingHangerSync(){
+  if(!pendingHangerSync || !canSynchronizeHangerNow()) return;
+  await synchronizeHangerState({message:'다른 창에서 변경된 행거 정보를 반영했습니다.',onlyWhenChanged:true});
+}
+
 scanInput.addEventListener('keydown', event=>{
   if(event.key !== 'Enter' || !appReady() || targetModal.classList.contains('show')) return;
   event.preventDefault();
@@ -365,6 +478,21 @@ scanInput.addEventListener('keydown', event=>{
   scanInput.value = '';
   if(barcode) handleScan(barcode);
 });
+
+async function insertHangerScan(barcode,target,isTarget,alreadyCompleted){
+  return supabase
+    .from('hanger_scans')
+    .insert({
+      hanger_id:activeHanger.id,
+      device_id:DEVICE_ID,
+      barcode,
+      target_id:target?.id || null,
+      is_target:isTarget,
+      photo_saved:alreadyCompleted
+    })
+    .select('id,barcode,is_target,photo_saved,scanned_at')
+    .single();
+}
 
 async function handleScan(barcode){
   if(!activeHanger || isRecordingScan) return;
@@ -376,18 +504,15 @@ async function handleScan(barcode){
   const alreadyCompleted = target?.status === 'completed';
 
   try{
-    const { data: savedScan, error } = await supabase
-      .from('hanger_scans')
-      .insert({
-        hanger_id:activeHanger.id,
-        device_id:DEVICE_ID,
-        barcode,
-        target_id:target?.id || null,
-        is_target:isTarget,
-        photo_saved:alreadyCompleted
-      })
-      .select('id,barcode,is_target,photo_saved,scanned_at')
-      .single();
+    let recoveredHanger = await verifyActiveHanger();
+    let { data: savedScan, error } = await insertHangerScan(barcode,target,isTarget,alreadyCompleted);
+    if(isStaleHangerError(error)){
+      setHangerMessage('행거 정보를 다시 연결하고 스캔을 저장하고 있습니다.',false);
+      await synchronizeHangerState({force:true});
+      if(!activeHanger) throw error;
+      ({data:savedScan,error} = await insertHangerScan(barcode,target,isTarget,alreadyCompleted));
+      recoveredHanger = true;
+    }
     if(error) throw error;
 
     const entry = {id:savedScan.id,barcode,isTarget,photo:alreadyCompleted,error:false,time:formatTime(savedScan.scanned_at)};
@@ -398,6 +523,7 @@ async function handleScan(barcode){
     if(isTarget) currentTargetCount += 1;
     if(alreadyCompleted) currentPhotoCount += 1;
     render();
+    if(recoveredHanger) setHangerMessage('행거 정보를 다시 연결하고 스캔을 정상 저장했습니다.',false);
 
     if(target?.status === 'pending'){
       currentTarget = target;
@@ -412,13 +538,21 @@ async function handleScan(barcode){
     }
   }catch(error){
     console.error('Failed to record hanger scan',error);
-    setHangerMessage(`스캔 기록 저장 실패: ${error.message || '다시 시도해주세요.'}`,true);
+    if(isStaleHangerError(error)){
+      hangerReady = false;
+      setHangerMessage('행거 연결이 변경되어 스캔을 저장하지 못했습니다. 다시 연결을 눌러주세요.',true);
+      connectionErrorText.textContent = '행거 정보가 변경되었습니다. 다시 연결하면 안전하게 이어서 스캔할 수 있습니다.';
+      connectionError.classList.add('show');
+    }else{
+      setHangerMessage(`스캔 기록 저장 실패: ${error.message || '다시 시도해주세요.'}`,true);
+    }
     vibrate([180,80,180]);
   }finally{
     isRecordingScan = false;
     scanInput.disabled = !appReady() || targetModal.classList.contains('show');
     renderControls();
     refocus();
+    await flushPendingHangerSync();
   }
 }
 
@@ -454,6 +588,7 @@ function resolveConfirmation(confirmed){
   renderControls();
   resolve(confirmed);
   refocus();
+  setTimeout(()=>flushPendingHangerSync(),0);
 }
 
 async function runHangerAction(action){
@@ -471,6 +606,7 @@ async function runHangerAction(action){
     scanInput.disabled = !appReady();
     render();
     refocus();
+    await flushPendingHangerSync();
   }
 }
 
@@ -499,6 +635,7 @@ async function deleteLastScan(){
     if(last.isTarget) currentTargetCount = Math.max(0,currentTargetCount-1);
     if(last.photo) currentPhotoCount = Math.max(0,currentPhotoCount-1);
     setHangerMessage('최근 스캔 1건을 행거에서 삭제했습니다.',false);
+    broadcastHangerChange('scan-deleted');
   });
 }
 
@@ -526,6 +663,7 @@ async function resetCurrentHanger(){
     currentPhotoCount = 0;
     cumulativeCount = Math.max(0,cumulativeCount-removedCount);
     setHangerMessage(`${activeHanger.hanger_number}번 행거를 초기화했습니다.`,false);
+    broadcastHangerChange('hanger-reset');
   });
 }
 
@@ -539,21 +677,29 @@ async function resetAllHistory(){
   });
   if(!confirmed) return;
   await runHangerAction(async()=>{
-    const { data: deletedHangers, error } = await supabase
-      .from('scan_hangers')
-      .delete()
-      .eq('device_id',DEVICE_ID)
-      .select('id');
-    if(error) throw error;
-    if(!deletedHangers?.length) throw new Error('삭제할 행거 기록을 확인하지 못했습니다. 다시 시도해주세요.');
+    hangerReady = false;
+    activeHanger = null;
+    scanInput.disabled = true;
+    renderControls();
+    try{
+      const { error } = await supabase
+        .from('scan_hangers')
+        .delete()
+        .eq('device_id',DEVICE_ID);
+      if(error) throw error;
 
-    activeHanger = await ensureActiveHanger();
-    logs = [];
-    currentHangerCount = 0;
-    cumulativeCount = 0;
-    currentTargetCount = 0;
-    currentPhotoCount = 0;
-    setHangerMessage('전체 스캔 기록을 초기화하고 1번 행거를 시작합니다.',false);
+      await loadHangerState();
+      hangerReady = true;
+      connectionError.classList.remove('show');
+      setHangerMessage('전체 스캔 기록을 초기화하고 1번 행거를 시작합니다.',false);
+      broadcastHangerChange('full-reset');
+    }catch(error){
+      activeHanger = null;
+      hangerReady = false;
+      connectionErrorText.textContent = '전체 초기화 후 새 행거를 연결하지 못했습니다. 다시 연결해주세요.';
+      connectionError.classList.add('show');
+      throw new Error('전체 초기화 후 행거 연결이 완료되지 않아 스캔을 잠갔습니다.');
+    }
   });
 }
 
@@ -579,6 +725,7 @@ async function completeCurrentHanger(){
     await loadHangerState();
     hangerReady = true;
     setHangerMessage(`${completedNumber}번 행거 완료 · ${activeHanger.hanger_number}번 행거를 시작합니다.`,false);
+    broadcastHangerChange('hanger-completed');
   });
 }
 
@@ -703,6 +850,7 @@ function closeModal(){
   scanInput.disabled = !appReady();
   renderControls();
   refocus();
+  setTimeout(()=>flushPendingHangerSync(),0);
 }
 
 function render(){
@@ -726,7 +874,7 @@ function render(){
 }
 
 function renderControls(){
-  const locked = !targetListReady || !hangerReady || isHangerBusy || isRecordingScan || isSaving || targetModal.classList.contains('show') || confirmModal.classList.contains('show');
+  const locked = !targetListReady || !hangerReady || isHangerBusy || isRecordingScan || isSaving || isSyncingHanger || targetModal.classList.contains('show') || confirmModal.classList.contains('show');
   deleteScanBtn.disabled = locked || currentHangerCount === 0;
   resetHangerBtn.disabled = locked || currentHangerCount === 0;
   completeHangerBtn.disabled = locked || currentHangerCount === 0;
@@ -734,8 +882,29 @@ function renderControls(){
 }
 function escapeHtml(value){ return value.replace(/[&<>'"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char])); }
 
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refocus(); });
-window.addEventListener('beforeunload',releasePreviewUrl);
+function receiveHangerSync(event){
+  if(!shouldAcceptHangerSync(event)) return;
+  pendingHangerSync = true;
+  flushPendingHangerSync();
+}
+
+if(hangerSyncChannel){
+  hangerSyncChannel.addEventListener('message',event=>receiveHangerSync(event.data));
+}else{
+  window.addEventListener('storage',event=>{
+    if(event.key !== HANGER_SYNC_STORAGE_KEY || !event.newValue) return;
+    try{ receiveHangerSync(JSON.parse(event.newValue)); }catch(_error){ /* 잘못된 동기화 이벤트 무시 */ }
+  });
+}
+
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden) return;
+  synchronizeHangerState({message:'변경된 행거 정보를 다시 연결했습니다.',onlyWhenChanged:true});
+});
+window.addEventListener('beforeunload',()=>{
+  releasePreviewUrl();
+  hangerSyncChannel?.close();
+});
 loadAppState();
 </script>
 </body>
