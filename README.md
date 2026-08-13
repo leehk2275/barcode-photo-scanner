@@ -91,6 +91,10 @@
 
 이 저장소는 테스트 및 개발용 독립 프로젝트입니다.
 
+배포 페이지:
+
+- `https://leehk2275.github.io/barcode-photo-scanner/`
+
 현재 메인 파일:
 
 - `index.html`

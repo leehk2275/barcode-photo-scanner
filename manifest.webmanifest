@@ -1,6 +1,6 @@
 {
   "name": "작업 바코드 스캐너",
-  "short_name": "바코드 촬영",
+  "short_name": "작업 바코드 스캐너",
   "description": "작업 대상 바코드를 확인하고 상품 사진을 촬영하는 모바일 도구",
   "start_url": "./",
   "scope": "./",

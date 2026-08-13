@@ -11,8 +11,9 @@
 - SVG favicon 추가
 - iPhone용 180x180 Apple Touch Icon 추가
 - Android / PWA용 192x192, 512x512 PNG 아이콘 추가
-- 앱 이름을 `바코드 촬영`으로 표시하는 Web App Manifest 추가
+- 홈 화면 표시 이름을 작업 제목과 동일한 `작업 바코드 스캐너`로 설정
 - iOS standalone 실행 관련 메타 태그 추가
+- GitHub 계정명 변경에 따른 Pages 주소를 `https://leehk2275.github.io/barcode-photo-scanner/`로 정정
 
 ### v1.2 Supabase sandbox 연동
 
@@ -188,7 +189,7 @@ Android / iOS 실기기 테스트 전에 공통 안정성 보완을 진행함.
 
 Repository:
 
-`i7444636/barcode-photo-scanner`
+`leehk2275/barcode-photo-scanner`
 
 초기 테스트 버전 커밋:
 
