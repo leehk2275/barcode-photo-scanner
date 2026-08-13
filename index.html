@@ -218,6 +218,7 @@ let isHangerBusy = false;
 let isSyncingHanger = false;
 let isExporting = false;
 let pendingHangerSync = false;
+let nextHangerNumber = 1;
 let currentHangerCount = 0;
 let cumulativeCount = 0;
 let currentTargetCount = 0;
@@ -386,7 +387,7 @@ async function loadTargetsData(){
   targets = loaded;
 }
 
-async function ensureActiveHanger(){
+async function loadActiveHanger(){
   const { data: existing, error: existingError } = await supabase
     .from('scan_hangers')
     .select('id,hanger_number,status,created_at')
@@ -396,7 +397,10 @@ async function ensureActiveHanger(){
     .limit(1)
     .maybeSingle();
   if(existingError) throw existingError;
-  if(existing) return existing;
+  if(existing){
+    nextHangerNumber = existing.hanger_number;
+    return existing;
+  }
 
   const { data: latest, error: latestError } = await supabase
     .from('scan_hangers')
@@ -406,10 +410,15 @@ async function ensureActiveHanger(){
     .limit(1)
     .maybeSingle();
   if(latestError) throw latestError;
+  nextHangerNumber = (latest?.hanger_number || 0)+1;
+  return null;
+}
 
+async function createActiveHanger(){
+  if(activeHanger) return activeHanger;
   const { data: created, error: createError } = await supabase
     .from('scan_hangers')
-    .insert({device_id:DEVICE_ID,hanger_number:(latest?.hanger_number || 0)+1,status:'active'})
+    .insert({device_id:DEVICE_ID,hanger_number:nextHangerNumber,status:'active'})
     .select('id,hanger_number,status,created_at')
     .single();
   if(createError?.code === '23505'){
@@ -422,23 +431,43 @@ async function ensureActiveHanger(){
       .limit(1)
       .maybeSingle();
     if(concurrentError) throw concurrentError;
-    if(concurrent) return concurrent;
+    if(concurrent){
+      nextHangerNumber = concurrent.hanger_number;
+      activeHanger = concurrent;
+      return concurrent;
+    }
   }
   if(createError) throw createError;
+  nextHangerNumber = created.hanger_number;
+  activeHanger = created;
   return created;
 }
 
 async function loadHangerState(){
-  activeHanger = await ensureActiveHanger();
+  activeHanger = await loadActiveHanger();
+  const { count: totalCount, error: totalError } = await supabase
+    .from('hanger_scans')
+    .select('*',{count:'exact',head:true})
+    .eq('device_id',DEVICE_ID);
+  if(totalError) throw totalError;
+  cumulativeCount = totalCount || 0;
+
+  if(!activeHanger){
+    logs = [];
+    currentHangerCount = 0;
+    currentTargetCount = 0;
+    currentPhotoCount = 0;
+    return;
+  }
+
   const currentFilter = query=>query.eq('device_id',DEVICE_ID).eq('hanger_id',activeHanger.id);
-  const [recent,current,total,target,photo] = await Promise.all([
+  const [recent,current,target,photo] = await Promise.all([
     currentFilter(supabase.from('hanger_scans').select('id,barcode,is_target,photo_saved,scanned_at').order('id',{ascending:false}).limit(30)),
     currentFilter(supabase.from('hanger_scans').select('*',{count:'exact',head:true})),
-    supabase.from('hanger_scans').select('*',{count:'exact',head:true}).eq('device_id',DEVICE_ID),
     currentFilter(supabase.from('hanger_scans').select('*',{count:'exact',head:true})).eq('is_target',true),
     currentFilter(supabase.from('hanger_scans').select('*',{count:'exact',head:true})).eq('photo_saved',true)
   ]);
-  for(const result of [recent,current,total,target,photo]) if(result.error) throw result.error;
+  for(const result of [recent,current,target,photo]) if(result.error) throw result.error;
   logs = recent.data.map(item=>({
     id:item.id,
     barcode:item.barcode,
@@ -448,7 +477,6 @@ async function loadHangerState(){
     time:formatTime(item.scanned_at)
   }));
   currentHangerCount = current.count || 0;
-  cumulativeCount = total.count || 0;
   currentTargetCount = target.count || 0;
   currentPhotoCount = photo.count || 0;
 }
@@ -466,10 +494,11 @@ async function synchronizeHangerState({message='',onlyWhenChanged=false,force=fa
   scanInput.disabled = true;
   renderControls();
   const previousHangerId = activeHanger?.id || null;
+  const previousHangerNumber = activeHanger?.hanger_number || nextHangerNumber;
   try{
     await loadHangerState();
     hangerReady = true;
-    const changed = previousHangerId !== activeHanger?.id;
+    const changed = previousHangerId !== activeHanger?.id || previousHangerNumber !== (activeHanger?.hanger_number || nextHangerNumber);
     if(message && (!onlyWhenChanged || changed)) setHangerMessage(message,false);
   }catch(error){
     activeHanger = null;
@@ -488,9 +517,8 @@ async function synchronizeHangerState({message='',onlyWhenChanged=false,force=fa
 
 async function verifyActiveHanger(){
   if(!activeHanger){
-    await synchronizeHangerState({message:'행거 정보를 다시 연결했습니다.',force:true});
-    if(!activeHanger) throw new Error('행거 정보를 다시 연결하지 못했습니다.');
-    return true;
+    await createActiveHanger();
+    return false;
   }
 
   const { data, error } = await supabase
@@ -507,7 +535,7 @@ async function verifyActiveHanger(){
   }
 
   await synchronizeHangerState({message:'변경된 행거 정보를 다시 연결했습니다.',force:true});
-  if(!activeHanger) throw new Error('행거 정보를 다시 연결하지 못했습니다.');
+  if(!activeHanger) await createActiveHanger();
   return true;
 }
 
@@ -540,7 +568,7 @@ async function insertHangerScan(barcode,target,isTarget){
 }
 
 async function handleScan(barcode){
-  if(!activeHanger || isRecordingScan) return;
+  if(isRecordingScan) return;
   isRecordingScan = true;
   scanInput.disabled = true;
   setHangerMessage('',false);
@@ -806,7 +834,7 @@ async function completeCurrentHanger(){
     hangerReady = false;
     await loadHangerState();
     hangerReady = true;
-    setHangerMessage(`${completedNumber}번 행거 완료 · ${activeHanger.hanger_number}번 행거를 시작합니다.`,false);
+    setHangerMessage(`${completedNumber}번 행거 완료 · ${nextHangerNumber}번 행거를 시작합니다.`,false);
     broadcastHangerChange('hanger-completed');
   });
 }
@@ -1153,7 +1181,7 @@ function closeModal(){
 }
 
 function render(){
-  $('hangerBadge').textContent = activeHanger ? `${activeHanger.hanger_number}번 행거` : '행거 준비 중';
+  $('hangerBadge').textContent = `${activeHanger?.hanger_number || nextHangerNumber}번 행거`;
   $('currentHangerCount').textContent = currentHangerCount.toLocaleString();
   $('cumulativeCount').textContent = cumulativeCount.toLocaleString();
   $('totalCount').textContent = cumulativeCount.toLocaleString();
